@@ -14,13 +14,13 @@ keywords:
   - gpu
   - energy
 
-home: https://github.com/stevenphtan/aitra-meter
+home: https://github.com/aitra-ai/aitra-meter
 sources:
-  - https://github.com/stevenphtan/aitra-meter
+  - https://github.com/aitra-ai/aitra-meter
 
 maintainers:
   - name: stevenphtan
-    url: https://github.com/stevenphtan
+    url: https://github.com/aitra-ai
 
 dependencies:
   - name: clickhouse
