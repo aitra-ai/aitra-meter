@@ -9,6 +9,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- Typo  →  in  (build error)
+- NVML provider uses  which is Linux-only — added  tag to  and moved side-effect import to  (macOS build error)
+- Literal newline inside string literal in  — replaced with  escape (build error)
+
 ### Added
 - EnergyProvider and InferenceMetricsProvider pluggable interfaces (`internal/provider/`)
 - Zeus energy provider stub
