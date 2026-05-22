@@ -1,0 +1,15 @@
+apiVersion: aitra-ai.github.io/v1alpha1
+kind: SiteConfig
+metadata:
+  name: airgapped-dc
+  namespace: aitra-system
+spec:
+  # Air-gapped deployment: no external API calls.
+  # carbonIntensityFallback and electricityCostPerKwh are the only
+  # conversion factors used. Update these periodically from your
+  # electricity provider and regional grid data.
+  gridZone: ""
+  electricityCostPerKwh: 0.09
+  pue: 1.40
+  carbonIntensityFallback: 350
+  carbonSource: manual
