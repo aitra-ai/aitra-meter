@@ -1,0 +1,95 @@
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "aitra-meter.fullname" . }}-measurement-agent
+  namespace: {{ include "aitra-meter.namespace" . }}
+  labels:
+    {{- include "aitra-meter.labels" . | nindent 4 }}
+    app.kubernetes.io/component: measurement-agent
+spec:
+  selector:
+    matchLabels:
+      {{- include "aitra-meter.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: measurement-agent
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        {{- include "aitra-meter.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: measurement-agent
+      annotations:
+        # Force pod restart when ConfigMap changes.
+        checksum/config: {{ include (print $.Template.BasePath "/measurement-agent-config.yaml") . | sha256sum }}
+    spec:
+      # GPU nodes require host PID namespace for NVML/Zeus access.
+      hostPID: true
+      nodeSelector:
+        {{- toYaml .Values.measurementAgent.nodeSelector | nindent 8 }}
+      tolerations:
+        # Tolerate the standard GPU taint so the DaemonSet lands on GPU nodes
+        # even when they have been tainted for dedicated inference use.
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: measurement-agent
+          image: "{{ .Values.measurementAgent.image.repository }}:{{ .Values.measurementAgent.image.tag }}"
+          imagePullPolicy: {{ .Values.measurementAgent.image.pullPolicy }}
+          args:
+            - --energy-provider={{ .Values.measurementAgent.energyProvider.type }}
+            - --inference-provider={{ .Values.measurementAgent.inferenceProvider.type }}
+            - --aggregator={{ include "aitra-meter.fullname" . }}-aggregation-service:9091
+            - --log-level=info
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            {{- if .Values.measurementAgent.inferenceProvider.config.endpoint }}
+            - name: INFERENCE_ENDPOINT
+              value: {{ .Values.measurementAgent.inferenceProvider.config.endpoint | quote }}
+            {{- end }}
+          ports:
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          securityContext:
+            privileged: true
+          resources:
+            {{- toYaml .Values.measurementAgent.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 9090
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 9090
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aitra-meter.fullname" . }}-measurement-agent
+  namespace: {{ include "aitra-meter.namespace" . }}
+  labels:
+    {{- include "aitra-meter.labels" . | nindent 4 }}
+    app.kubernetes.io/component: measurement-agent
+spec:
+  # Headless — Prometheus scrapes each pod directly via ServiceMonitor.
+  clusterIP: None
+  selector:
+    {{- include "aitra-meter.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: measurement-agent
+  ports:
+    - name: metrics
+      port: 9090
+      targetPort: metrics
+      protocol: TCP

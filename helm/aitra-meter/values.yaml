@@ -57,6 +57,14 @@ aggregationService:
       cpu: 1000m
       memory: 512Mi
   port: 8080
+  # ClickHouse DSN for measurement record persistence.
+  # Leave empty to disable ClickHouse writes (metrics-only mode).
+  # Example: "clickhouse://aitra:password@clickhouse.default:9000/aitra"
+  clickhouseDSN: ""
+  # If clickhouseDSN contains a password, put the full DSN in a Secret
+  # and reference it here instead of setting clickhouseDSN directly.
+  clickhouseDSNSecretName: ""
+  clickhouseDSNSecretKey: "dsn"
 
 dashboard:
   enabled: true
@@ -78,16 +86,16 @@ prometheus:
     interval: 15s
     scrapeTimeout: 10s
 
-# ClickHouse — for historical time-series storage
-# Set enabled: false to use an external ClickHouse instance
+# ClickHouse connection details — install ClickHouse separately via the
+# ClickHouse Kubernetes Operator or Helm chart.
+# See: https://github.com/Altinity/clickhouse-operator
 clickhouse:
-  enabled: true
-  auth:
-    username: aitra
-    password: ""  # set via secret in production
-  persistence:
-    enabled: true
-    size: 50Gi
+  # Username used to construct the default DSN (ignored if clickhouseDSNSecretName is set).
+  username: aitra
+  # Host of the ClickHouse service reachable from the aggregation service.
+  host: clickhouse.default.svc.cluster.local
+  port: 9000
+  database: aitra
 
 # Site configuration — maps to SiteConfig CRD
 siteConfig:

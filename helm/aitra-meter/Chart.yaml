@@ -22,8 +22,7 @@ maintainers:
   - name: stevenphtan
     url: https://github.com/stevenphtan
 
-dependencies:
-  - name: clickhouse
-    version: ">=0.1.0"
-    repository: https://charts.clickhouse.io
-    condition: clickhouse.enabled
+# ClickHouse is not bundled as a subchart — install it separately via the
+# ClickHouse Kubernetes Operator or Helm chart, then set:
+#   --set aggregationService.clickhouseDSN=clickhouse://user:pass@host:9000/aitra
+# This keeps the Aitra Meter chart self-contained with no external chart repos.
