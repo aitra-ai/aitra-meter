@@ -1,0 +1,15 @@
+apiVersion: aitra-ai.github.io/v1alpha1
+kind: MeasurementPolicy
+metadata:
+  name: default
+  namespace: aitra-system
+spec:
+  scope:
+    namespaces: []   # empty = all namespaces
+  attribution:
+    defaultMethod: direct
+  calibration:
+    preferredTier: aitra_benchmark
+  cv:
+    threshold: 0.03
+    windowSize: 100
