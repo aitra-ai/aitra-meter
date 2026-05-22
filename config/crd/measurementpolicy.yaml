@@ -1,0 +1,79 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: measurementpolicies.aitra.io
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.14.0
+spec:
+  group: aitra.io
+  names:
+    kind: MeasurementPolicy
+    listKind: MeasurementPolicyList
+    plural: measurementpolicies
+    singular: measurementpolicy
+    shortNames:
+      - mp
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                scope:
+                  type: object
+                  properties:
+                    namespaces:
+                      type: array
+                      items:
+                        type: string
+                      description: Namespaces to measure. Empty = all namespaces.
+                attribution:
+                  type: object
+                  properties:
+                    defaultMethod:
+                      type: string
+                      enum: [direct, proportional]
+                      default: direct
+                    namespaceOverrides:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          namespace:
+                            type: string
+                          method:
+                            type: string
+                            enum: [direct, proportional]
+                calibration:
+                  type: object
+                  properties:
+                    preferredTier:
+                      type: string
+                      enum: [aitra_benchmark, reference, self_calibrated]
+                      default: aitra_benchmark
+                cv:
+                  type: object
+                  properties:
+                    threshold:
+                      type: number
+                      default: 0.03
+                    windowSize:
+                      type: integer
+                      default: 100
+                budget:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      namespace:
+                        type: string
+                      monthlyLimitUSD:
+                        type: number
+                      alertThresholdPct:
+                        type: integer

@@ -1,0 +1,39 @@
+# Go
+*.exe
+*.test
+*.out
+vendor/
+bin/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+dist/
+*.log
+
+# Helm
+*.tgz
+charts/*.tgz
+
+# Secrets
+*.env
+.env.*
+secrets/
+*.pem
+*.key
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+build/
+__pycache__/
+*.pyc

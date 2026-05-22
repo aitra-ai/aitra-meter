@@ -1,0 +1,29 @@
+apiVersion: v2
+name: aitra-meter
+description: Open-source Kubernetes-native AI inference efficiency measurement
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+
+keywords:
+  - ai
+  - inference
+  - efficiency
+  - observability
+  - kubernetes
+  - gpu
+  - energy
+
+home: https://github.com/stevenphtan/aitra-meter
+sources:
+  - https://github.com/stevenphtan/aitra-meter
+
+maintainers:
+  - name: stevenphtan
+    url: https://github.com/stevenphtan
+
+dependencies:
+  - name: clickhouse
+    version: ">=0.1.0"
+    repository: https://charts.clickhouse.io
+    condition: clickhouse.enabled

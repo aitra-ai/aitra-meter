@@ -1,0 +1,117 @@
+# Aitra Meter Helm chart values
+# See docs/spec/aitra-meter-spec-v1.0.md for full specification
+
+cluster:
+  # Name of this cluster — used as a label on all measurements
+  name: ""
+
+measurementAgent:
+  image:
+    repository: ghcr.io/stevenphtan/aitra-meter/measurement-agent
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  # Node selector — DaemonSet only schedules to nodes with this label
+  nodeSelector:
+    aitra.io/gpu: "true"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  # CV gate: flag measurements with rolling CV above this threshold
+  cvThreshold: 0.03
+  cvWindowSize: 100
+
+aggregationService:
+  image:
+    repository: ghcr.io/stevenphtan/aitra-meter/aggregation-service
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  replicas: 1
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+  port: 8080
+
+dashboard:
+  enabled: true
+  image:
+    repository: ghcr.io/stevenphtan/aitra-meter/dashboard
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  replicas: 1
+  port: 3000
+  service:
+    type: ClusterIP
+
+# Prometheus integration
+prometheus:
+  serviceMonitor:
+    enabled: true
+    # Namespace where Prometheus Operator is installed
+    namespace: monitoring
+    interval: 15s
+    scrapeTimeout: 10s
+
+# ClickHouse — for historical time-series storage
+# Set enabled: false to use an external ClickHouse instance
+clickhouse:
+  enabled: true
+  auth:
+    username: aitra
+    password: ""  # set via secret in production
+  persistence:
+    enabled: true
+    size: 50Gi
+
+# Site configuration — maps to SiteConfig CRD
+siteConfig:
+  # ElectricityMaps zone identifier (https://app.electricitymaps.com/map)
+  gridZone: ""
+  electricityCostPerKwh: 0.12
+  # PUE applied as multiplier in chargeback views
+  pue: 1.35
+  # Carbon intensity fallback (gCO2/kWh) used when API is unavailable
+  carbonIntensityFallback: 400
+  # Carbon source: electricitymaps | watttime | manual
+  carbonSource: electricitymaps
+
+# External API credentials
+# Store in Kubernetes secrets and reference by name
+externalApis:
+  electricityMaps:
+    enabled: true
+    secretName: aitra-electricitymaps-token
+    secretKey: token
+  wattTime:
+    enabled: false
+    secretName: aitra-watttime-credentials
+  openEI:
+    enabled: false
+
+# Air-gapped mode: disable all external API calls
+# All conversion factors are read from siteConfig values above
+airGapped:
+  enabled: false
+
+# Default MeasurementPolicy — applied to all namespaces unless overridden
+measurementPolicy:
+  defaultAttributionMethod: direct  # direct | proportional
+  calibration:
+    preferredTier: aitra_benchmark  # aitra_benchmark | reference | self_calibrated
+  budget:
+    enabled: false
+    # Per-namespace budget limits — configure per namespace
+    namespaces: []
+    # - namespace: inference-prod
+    #   monthlyLimitUSD: 10000
+    #   alertThresholdPct: 80
+
+# Namespace where Aitra Meter is installed
+namespaceOverride: ""
