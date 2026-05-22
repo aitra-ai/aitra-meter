@@ -5,6 +5,7 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  workflow_dispatch: # enables manual trigger for GPU integration tests
 
 jobs:
   build:
@@ -67,4 +68,33 @@ jobs:
           version: v3.15.0
 
       - name: Lint Helm chart
-        run: helm lint helm/aitra-meter
+        # cluster.name is required at deploy time; pass a placeholder for lint.
+        run: helm lint helm/aitra-meter --set cluster.name=ci-lint
+
+  nvml-integration:
+    name: NVML integration tests (GPU)
+    # Runs only on a self-hosted runner labelled "gpu". The job is skipped on
+    # runners without that label. Register a GPU node with:
+    #   ./config.sh --labels gpu --name <runner-name>
+    runs-on: [self-hosted, gpu]
+    # Manual trigger only — don't block PRs on GPU availability.
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run NVML integration tests
+        run: |
+          go test -tags 'linux integration' \
+            -v -timeout 300s \
+            ./internal/provider/energy/nvml/... \
+        env:
+          CGO_ENABLED: "1"
