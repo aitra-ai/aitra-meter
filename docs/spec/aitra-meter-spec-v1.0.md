@@ -348,7 +348,7 @@ PUE configured in `SiteConfig`. Shown as a configured input alongside raw measur
 
 | Tier | Source | When used |
 |---|---|---|
-| `aitra_benchmark` | Aitra Benchmark (Singapore AI Lab) | When published and covering the combination |
+| `aitra_benchmark` | Aitra Benchmark | When published and covering the combination |
 | `reference` | ML.ENERGY v3.0 (NeurIPS 2025) | When Aitra Benchmark does not cover it |
 | `self_calibrated` | Aitra Meter production measurements | When neither covers it |
 | `uncalibrated` | No reference available | New models |
