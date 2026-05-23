@@ -86,6 +86,13 @@ prometheus:
     interval: 15s
     scrapeTimeout: 10s
 
+# Storage backend — pluggable, defaults to ClickHouse.
+# backend: clickhouse | duckdb | postgres
+# Use duckdb for single-site deployments or development (no separate server needed)
+storage:
+  backend: clickhouse
+  config: {}
+
 # ClickHouse connection details — install ClickHouse separately via the
 # ClickHouse Kubernetes Operator or Helm chart.
 # See: https://github.com/Altinity/clickhouse-operator
