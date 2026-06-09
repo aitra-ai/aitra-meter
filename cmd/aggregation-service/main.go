@@ -26,17 +26,18 @@ import (
 	k8slookup "github.com/aitra-ai/aitra-meter/internal/k8s"
 	"github.com/aitra-ai/aitra-meter/internal/storage"
 
-	// storage backends — blank imports trigger init() registration
-	_ "github.com/aitra-ai/aitra-meter/internal/storage/sqlite"
+	// storage backends — blank imports trigger init() registration.
+	// sqlite backend added in feat(storage): SQLite backend PR.
+	_ "github.com/aitra-ai/aitra-meter/internal/storage/duckdb"
 	_ "github.com/aitra-ai/aitra-meter/internal/storage/memory"
 )
 
 func main() {
-	metricsAddr   := flag.String("metrics-addr",   ":8080", "Prometheus metrics and API listen address")
-	grpcAddr      := flag.String("grpc-addr",      ":9091", "gRPC listen address for measurement agents")
-	clusterName   := flag.String("cluster",        "",      "Cluster name (required)")
-	kubeconfig    := flag.String("kubeconfig",     "",      "Path to kubeconfig (empty = in-cluster)")
-	logLevel      := flag.String("log-level",      "info",  "Log level: debug | info | warn | error")
+	metricsAddr := flag.String("metrics-addr", ":8080", "Prometheus metrics and API listen address")
+	grpcAddr    := flag.String("grpc-addr",    ":9091", "gRPC listen address for measurement agents")
+	clusterName := flag.String("cluster",      "",      "Cluster name (required)")
+	kubeconfig  := flag.String("kubeconfig",   "",      "Path to kubeconfig (empty = in-cluster)")
+	logLevel    := flag.String("log-level",    "info",  "Log level: debug | info | warn | error")
 	flag.Parse()
 
 	if *clusterName == "" {
@@ -56,15 +57,16 @@ func main() {
 	defer cancel()
 
 	// --- storage backend ---------------------------------------------------
+	// Default is "sqlite" once the SQLite backend is implemented.
+	// Until then, "memory" is used — data is not persisted across restarts.
 	backendName := os.Getenv("STORAGE_BACKEND")
 	if backendName == "" {
-		backendName = "sqlite"
+		backendName = "memory"
 	}
 	backend, err := storage.New(backendName, map[string]string{
 		"path": os.Getenv("SQLITE_PATH"),
 	})
 	if err != nil {
-		// Fall back to memory backend so the service starts without persistence.
 		log.Warn("storage backend init failed — falling back to memory (no persistence)",
 			zap.String("backend", backendName),
 			zap.Error(err),
@@ -117,7 +119,6 @@ func main() {
 	})
 
 	// GET /api/v1/namespaces?from=<RFC3339>&to=<RFC3339>&pue=<float>
-	// Used by the dashboard chargeback view.
 	mux.HandleFunc("/api/v1/namespaces", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		from, err := time.Parse(time.RFC3339, q.Get("from"))
