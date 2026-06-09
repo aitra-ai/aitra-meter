@@ -97,4 +97,16 @@ var (
 		Name: "aitra_gpu_power_watts",
 		Help: "Current GPU power draw in watts.",
 	}, []string{"node", "gpu_id"})
+
+	// TokensPerJoule is the inverse of J/token — output efficiency in the forward direction.
+	TokensPerJoule = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "aitra_tokens_per_joule",
+		Help: "Output tokens produced per joule. Inverse of J/token. Higher is more efficient.",
+	}, []string{"namespace", "workload", "model", "hardware"})
+
+	// GPUUtilizationEfficiency is output throughput per watt — tokens per second per watt.
+	GPUUtilizationEfficiency = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "aitra_gpu_utilization_efficiency",
+		Help: "Output tokens per second per GPU watt. Bridges GPU utilisation and token throughput.",
+	}, []string{"namespace", "workload", "model", "hardware"})
 )
