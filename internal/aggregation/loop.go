@@ -102,6 +102,22 @@ func (l *Loop) ReportWindow(
 		attr.Precision, tier, method,
 	).Set(jpt)
 
+	if jpt > 0 {
+		metrics.TokensPerJoule.WithLabelValues(
+			attr.Namespace, attr.Workload, w.ModelName, hw,
+		).Set(1.0 / jpt)
+	}
+	if w.PowerWatts > 0 && w.OutputTokens > 0 {
+		// tokens/sec per watt: token delta / window duration / power
+		// WindowDuration is not in WindowReport; use a 30s default approximation.
+		// Exact value set when window duration is added to the proto.
+		const windowSecs = 30.0
+		tokensPerSecPerWatt := (float64(w.OutputTokens) / windowSecs) / w.PowerWatts
+		metrics.GPUUtilizationEfficiency.WithLabelValues(
+			attr.Namespace, attr.Workload, w.ModelName, hw,
+		).Set(tokensPerSecPerWatt)
+	}
+
 	metrics.NamespaceEnergyJoulesTotal.WithLabelValues(attr.Namespace, method).
 		Add(w.EnergyJoules)
 	metrics.NamespaceTokensTotal.WithLabelValues(attr.Namespace).
