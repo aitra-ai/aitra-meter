@@ -1,0 +1,52 @@
+# Aitra Meter — reference Prometheus alerting rules.
+# Apply with: kubectl apply -f examples/alerting-rules.yaml
+# Or mount via the Prometheus Operator PrometheusRule CRD.
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: aitra-meter
+  namespace: monitoring
+  labels:
+    prometheus: kube-prometheus
+    role: alert-rules
+spec:
+  groups:
+    - name: aitra-meter
+      rules:
+        - alert: AIEfficiencyRegression
+          expr: |
+            aitra_j_per_token
+            > on(namespace, model, hardware)
+            (avg_over_time(aitra_j_per_token[1h]) * 1.20)
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "J/token increased >20% over 1-hour rolling average"
+            description: >
+              {{ $labels.namespace }}/{{ $labels.model }} on {{ $labels.hardware }}:
+              J/token is {{ $value | humanize }} — more than 20% above the 1h average.
+
+        - alert: GPUIdleExcessive
+          expr: aitra_idle_time_ratio > 0.40
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "GPU idle >40% for 30 minutes"
+            description: >
+              Node {{ $labels.node }} has been idle {{ $value | humanizePercentage }}
+              of the last hour. Consider scaling down or consolidating workloads.
+
+        - alert: MeasurementUnstable
+          expr: aitra_measurement_cv > 0.03
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "J/token CV >3% — measurement window flagged unstable"
+            description: >
+              Node {{ $labels.node }}, model {{ $labels.model_name }}:
+              CV is {{ $value | humanizePercentage }}. Check for workload
+              interference or GPU thermal throttling.

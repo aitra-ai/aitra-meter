@@ -1,0 +1,137 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.0.0" },
+    { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" }
+  ],
+  "title": "Aitra Meter",
+  "uid": "aitra-meter-v1",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "30s",
+  "tags": ["aitra", "ai", "inference", "energy"],
+  "panels": [
+    {
+      "id": 1,
+      "title": "J/token vs GPU utilisation",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "datasource": "${DS_PROMETHEUS}",
+          "expr": "aitra_j_per_token",
+          "legendFormat": "J/token — {{model}} {{hardware}}",
+          "refId": "A"
+        },
+        {
+          "datasource": "${DS_PROMETHEUS}",
+          "expr": "nvidia_gpu_utilization / 100",
+          "legendFormat": "GPU util — {{instance}}",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": [
+          { "matcher": { "id": "byNamePattern", "options": "J/token.*" },
+            "properties": [{ "id": "unit", "value": "joule" }] }
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "title": "Tokens per joule",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "datasource": "${DS_PROMETHEUS}",
+          "expr": "aitra_tokens_per_joule",
+          "legendFormat": "tokens/J — {{namespace}} {{model}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "id": 3,
+      "title": "Idle time ratio",
+      "type": "gauge",
+      "gridPos": { "x": 0, "y": 8, "w": 6, "h": 4 },
+      "targets": [
+        {
+          "datasource": "${DS_PROMETHEUS}",
+          "expr": "aitra_idle_time_ratio",
+          "legendFormat": "{{node}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0, "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.3 },
+              { "color": "red", "value": 0.4 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Measurement CV",
+      "type": "gauge",
+      "gridPos": { "x": 6, "y": 8, "w": 6, "h": 4 },
+      "targets": [
+        {
+          "datasource": "${DS_PROMETHEUS}",
+          "expr": "aitra_measurement_cv",
+          "legendFormat": "{{node}} {{model_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0, "max": 0.1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.02 },
+              { "color": "red", "value": 0.03 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Cost per million tokens (USD)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 4 },
+      "targets": [
+        {
+          "datasource": "${DS_PROMETHEUS}",
+          "expr": "aitra_cost_per_million_tokens_usd",
+          "legendFormat": "{{namespace}} {{model}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" } }
+    }
+  ]
+}
