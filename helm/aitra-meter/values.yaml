@@ -89,6 +89,17 @@ storage:
     # Mount a PersistentVolume at /data for durable storage.
     path: /data/aitra.db
 
+# OpenTelemetry OTLP export — opt-in, default disabled.
+# When enabled, the aggregation service emits gen_ai.infrastructure.energy.*
+# metrics via OTLP in addition to Prometheus. Both pipelines run simultaneously.
+otel:
+  enabled: false
+  # OTLP gRPC receiver endpoint (without scheme).
+  # Example: otel-collector.monitoring.svc.cluster.local:4317
+  endpoint: ""
+  # Set true for in-cluster collectors without TLS.
+  insecure: true
+
 # Site configuration — maps to SiteConfig CRD
 siteConfig:
   # ElectricityMaps zone identifier (https://app.electricitymaps.com/map)
