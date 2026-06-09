@@ -1,0 +1,37 @@
+{
+  "title": "OpenCost + Aitra — Cost per namespace",
+  "uid": "opencost-aitra-combined",
+  "schemaVersion": 38,
+  "panels": [
+    {
+      "id": 1,
+      "title": "$/GPU-hr per namespace (OpenCost)",
+      "description": "Infrastructure cost from OpenCost — what the hardware costs per hour",
+      "type": "bargauge",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum by (namespace) (container_cpu_allocation_cost + container_memory_allocation_cost + container_gpu_allocation_cost)",
+          "legendFormat": "{{namespace}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" } }
+    },
+    {
+      "id": 2,
+      "title": "$/M tokens per namespace (Aitra)",
+      "description": "Output-linked cost from Aitra Meter — what the inference produces per million tokens",
+      "type": "bargauge",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "aitra_cost_per_million_tokens_usd",
+          "legendFormat": "{{namespace}} {{model}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" } }
+    }
+  ]
+}

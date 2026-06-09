@@ -1,0 +1,26 @@
+# Scale inference Deployment to zero when idle_time_ratio exceeds 0.40
+# for 300 seconds. Replicas scale back up when requests resume.
+#
+# Prerequisites:
+#   helm install keda kedacore/keda --namespace keda --create-namespace
+#
+# Apply:
+#   kubectl apply -f examples/keda/scale-on-idle.yaml
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: inference-idle-scaledown
+  namespace: inference-prod
+spec:
+  scaleTargetRef:
+    name: inference-chat
+  minReplicaCount: 0
+  maxReplicaCount: 4
+  cooldownPeriod: 300
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus-operated.monitoring.svc.cluster.local:9090
+        metricName: aitra_idle_time_ratio
+        query: aitra_idle_time_ratio{namespace="inference-prod"}
+        threshold: "0.4"

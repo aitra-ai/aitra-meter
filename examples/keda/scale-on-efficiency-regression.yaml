@@ -1,0 +1,25 @@
+# Trigger a scaling event when J/token exceeds 120% of its value from 1 hour ago.
+# This surfaces efficiency regressions as an autoscaling signal — useful for
+# triggering a deployment rollback or an alert-driven scale-out.
+#
+# Apply:
+#   kubectl apply -f examples/keda/scale-on-efficiency-regression.yaml
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: inference-efficiency-alert
+  namespace: inference-prod
+spec:
+  scaleTargetRef:
+    name: inference-chat
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus-operated.monitoring.svc.cluster.local:9090
+        metricName: aitra_j_per_token_regression_ratio
+        query: >
+          aitra_j_per_token{namespace="inference-prod",model="Qwen3.6-27B"}
+          / on()
+          aitra_j_per_token{namespace="inference-prod",model="Qwen3.6-27B"}
+          offset 1h
+        threshold: "1.20"
