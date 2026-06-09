@@ -1,0 +1,48 @@
+{{- if .Values.prometheus.serviceMonitor.enabled }}
+---
+# ServiceMonitor for the measurement agent (one target per GPU node).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "aitra-meter.fullname" . }}-measurement-agent
+  namespace: {{ .Values.prometheus.serviceMonitor.namespace }}
+  labels:
+    {{- include "aitra-meter.labels" . | nindent 4 }}
+    app.kubernetes.io/component: measurement-agent
+spec:
+  selector:
+    matchLabels:
+      {{- include "aitra-meter.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: measurement-agent
+  namespaceSelector:
+    matchNames:
+      - {{ include "aitra-meter.namespace" . }}
+  endpoints:
+    - port: metrics
+      interval: {{ .Values.prometheus.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.prometheus.serviceMonitor.scrapeTimeout }}
+      path: /metrics
+---
+# ServiceMonitor for the aggregation service (single target).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "aitra-meter.fullname" . }}-aggregation-service
+  namespace: {{ .Values.prometheus.serviceMonitor.namespace }}
+  labels:
+    {{- include "aitra-meter.labels" . | nindent 4 }}
+    app.kubernetes.io/component: aggregation-service
+spec:
+  selector:
+    matchLabels:
+      {{- include "aitra-meter.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: aggregation-service
+  namespaceSelector:
+    matchNames:
+      - {{ include "aitra-meter.namespace" . }}
+  endpoints:
+    - port: metrics
+      interval: {{ .Values.prometheus.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.prometheus.serviceMonitor.scrapeTimeout }}
+      path: /metrics
+{{- end }}

@@ -1,0 +1,12 @@
+# Default owners for everything
+*  @stevenphtan
+
+# Helm chart
+/helm/  @stevenphtan
+
+# Go core
+/internal/  @stevenphtan
+/cmd/       @stevenphtan
+
+# Docs
+/docs/  @stevenphtan

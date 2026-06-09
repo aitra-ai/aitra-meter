@@ -1,0 +1,36 @@
+# Example inference Deployment with Aitra Meter annotations.
+# Add these annotations to your existing vLLM or other inference server Deployments.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inference-chat
+  namespace: inference-prod
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: inference-chat
+  template:
+    metadata:
+      labels:
+        app: inference-chat
+      annotations:
+        # Required for workload-level attribution in Aitra Meter
+        aitra-ai.github.io/workload: chat       # chat | code | reasoning | batch
+        aitra-ai.github.io/precision: fp16       # fp16 | fp8 | bf16
+        aitra-ai.github.io/team: platform
+        aitra-ai.github.io/cost-centre: cc-1102
+    spec:
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:latest
+          args:
+            - --model
+            - Qwen/Qwen3.6-27B
+            - --dtype
+            - float16
+          ports:
+            - containerPort: 8000
+          resources:
+            limits:
+              nvidia.com/gpu: "1"

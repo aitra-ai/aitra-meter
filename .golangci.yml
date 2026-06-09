@@ -1,0 +1,37 @@
+run:
+  timeout: 5m
+  go: "1.22"
+
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gofmt
+    - goimports
+    - misspell
+    - revive
+    - gosec
+    - exhaustive
+
+linters-settings:
+  goimports:
+    local-prefixes: github.com/aitra-ai/aitra-meter
+  revive:
+    rules:
+      - name: exported
+        severity: warning
+  gosec:
+    excludes:
+      - G115  # integer overflow — false positive in provider registry
+
+issues:
+  exclude-rules:
+    # Test files are allowed to use unsafe patterns
+    - path: _test\.go
+      linters:
+        - gosec
+        - errcheck

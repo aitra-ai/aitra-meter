@@ -1,0 +1,58 @@
+version: "3.9"
+
+# Local dev stack for testing without a Kubernetes cluster.
+#
+# Usage:
+#   docker compose up -d
+#   go run ./dev/seed.go          # populate 30 days of synthetic data
+#   open http://localhost:3000    # dashboard
+#   open http://localhost:9090    # Prometheus UI
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    volumes:
+      - ./dev/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=90d"
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+
+  aggregation-service:
+    build:
+      context: .
+      dockerfile: build/aggregation-service/Dockerfile
+    environment:
+      CLUSTER_NAME: dev
+      STORAGE_BACKEND: sqlite
+      SQLITE_PATH: /data/aitra.db
+    volumes:
+      - sqlite-data:/data
+    ports:
+      - "9091:9091"   # gRPC (measurement agents)
+      - "8080:8080"   # HTTP metrics (Prometheus scrape target)
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  dashboard:
+    build:
+      context: dashboard
+      dockerfile: Dockerfile
+    environment:
+      PROMETHEUS_URL: "http://prometheus:9090"
+      AGGREGATION_URL: "http://aggregation-service:8080"
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - aggregation-service
+    restart: unless-stopped
+
+volumes:
+  prometheus-data:
+  sqlite-data:

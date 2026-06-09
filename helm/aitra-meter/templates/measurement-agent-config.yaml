@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "aitra-meter.fullname" . }}-agent-config
+  namespace: {{ include "aitra-meter.namespace" . }}
+  labels:
+    {{- include "aitra-meter.labels" . | nindent 4 }}
+data:
+  energy-provider: {{ .Values.measurementAgent.energyProvider.type | quote }}
+  inference-provider: {{ .Values.measurementAgent.inferenceProvider.type | quote }}
+  cv-threshold: {{ .Values.measurementAgent.cvThreshold | quote }}
+  cv-window-size: {{ .Values.measurementAgent.cvWindowSize | quote }}
+  {{- range $k, $v := .Values.measurementAgent.inferenceProvider.config }}
+  inference-{{ $k }}: {{ $v | quote }}
+  {{- end }}

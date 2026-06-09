@@ -1,0 +1,82 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "aitra-meter.fullname" . }}-aggregation-service
+  namespace: {{ include "aitra-meter.namespace" . }}
+  labels:
+    {{- include "aitra-meter.labels" . | nindent 4 }}
+    app.kubernetes.io/component: aggregation-service
+spec:
+  replicas: {{ .Values.aggregationService.replicas }}
+  selector:
+    matchLabels:
+      {{- include "aitra-meter.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: aggregation-service
+  template:
+    metadata:
+      labels:
+        {{- include "aitra-meter.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: aggregation-service
+    spec:
+      serviceAccountName: {{ include "aitra-meter.serviceAccountName" . }}
+      containers:
+        - name: aggregation-service
+          image: "{{ .Values.aggregationService.image.repository }}:{{ .Values.aggregationService.image.tag }}"
+          imagePullPolicy: {{ .Values.aggregationService.image.pullPolicy }}
+          args:
+            - --cluster={{ required "cluster.name is required" .Values.cluster.name }}
+            - --metrics-addr=:{{ .Values.aggregationService.port }}
+            - --grpc-addr=:9091
+            - --log-level=info
+          env:
+            - name: CLUSTER_NAME
+              value: {{ .Values.cluster.name | quote }}
+            - name: STORAGE_BACKEND
+              value: sqlite
+            - name: SQLITE_PATH
+              value: {{ .Values.storage.config.path | default "/data/aitra.db" | quote }}
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.aggregationService.port }}
+              protocol: TCP
+            - name: grpc
+              containerPort: 9091
+              protocol: TCP
+          resources:
+            {{- toYaml .Values.aggregationService.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: metrics
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aitra-meter.fullname" . }}-aggregation-service
+  namespace: {{ include "aitra-meter.namespace" . }}
+  labels:
+    {{- include "aitra-meter.labels" . | nindent 4 }}
+    app.kubernetes.io/component: aggregation-service
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "aitra-meter.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: aggregation-service
+  ports:
+    - name: metrics
+      port: {{ .Values.aggregationService.port }}
+      targetPort: metrics
+      protocol: TCP
+    - name: grpc
+      port: 9091
+      targetPort: grpc
+      protocol: TCP

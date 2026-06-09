@@ -1,0 +1,13 @@
+apiVersion: aitra-ai.github.io/v1alpha1
+kind: SiteConfig
+metadata:
+  name: sgp-dc01
+  namespace: aitra-system
+spec:
+  # ElectricityMaps zone for Singapore
+  # Full zone list: https://github.com/electricitymaps/electricitymaps-contrib/blob/master/config/zones.yaml
+  gridZone: SG
+  electricityCostPerKwh: 0.12
+  pue: 1.35
+  carbonIntensityFallback: 412
+  carbonSource: electricitymaps

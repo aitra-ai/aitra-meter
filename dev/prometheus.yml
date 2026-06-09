@@ -1,0 +1,16 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: aggregation-service
+    static_configs:
+      - targets: ["aggregation-service:8080"]
+    metrics_path: /metrics
+
+  # When running the measurement-agent locally (outside Docker) point it here.
+  # Remove or adjust if running measurement-agent inside the compose network.
+  - job_name: measurement-agent-local
+    static_configs:
+      - targets: ["host.docker.internal:9100"]
+    metrics_path: /metrics

@@ -1,0 +1,29 @@
+apiVersion: aitra-ai.github.io/v1alpha1
+kind: MeasurementPolicy
+metadata:
+  name: with-budget
+  namespace: aitra-system
+spec:
+  scope:
+    namespaces:
+      - inference-prod
+      - inference-fin
+      - inference-eng
+  attribution:
+    defaultMethod: direct
+    namespaceOverrides:
+      # inference-shared runs multiple teams on one vLLM instance
+      - namespace: inference-shared
+        method: proportional
+  calibration:
+    preferredTier: aitra_benchmark
+  cv:
+    threshold: 0.03
+    windowSize: 100
+  budget:
+    - namespace: inference-fin
+      monthlyLimitUSD: 5000
+      alertThresholdPct: 80
+    - namespace: inference-eng
+      monthlyLimitUSD: 3000
+      alertThresholdPct: 75
