@@ -21,11 +21,23 @@ measurementAgent:
       cpu: 500m
       memory: 256Mi
 
-  # Provider configuration
-  # Energy providers:    zeus (default) | nvml
-  # Inference providers: vllm (default) | generic-prometheus | tgi | sglang | ollama | triton
+  # Energy provider — select based on GPU vendor.
+  #
+  # nvml  — NVIDIA GPUs (H100, H200, L40S, A100, and any NVML-capable GPU).
+  #         Uses go-nvml (github.com/NVIDIA/go-nvml), NVIDIA's official Go
+  #         binding for the NVIDIA Management Library. libnvidia-ml.so.1 is
+  #         part of the standard NVIDIA driver and is always present on GPU
+  #         nodes. No additional installation required.
+  #
+  # amd   — AMD GPUs (MI300X, MI250X, MI210, RX 7900 series, ROCm 6.x+).
+  #         Uses AMD SMI (libamd_smi.so), AMD's recommended C library for GPU
+  #         telemetry. libamd_smi.so is shipped with the ROCm stack and is
+  #         present on any node running the AMD GPU operator or a manual ROCm
+  #         installation. No additional installation required.
+  #
+  # Inference providers: vllm (default) | generic-prometheus
   energyProvider:
-    type: zeus
+    type: nvml
     config: {}
   inferenceProvider:
     type: vllm
@@ -79,30 +91,20 @@ prometheus:
     scrapeTimeout: 10s
 
 # Storage backend — SQLite by default (embedded, no infrastructure required).
-# The sqlite backend writes every measurement record to a local file.
-# Set storage.config.path to a path backed by a PersistentVolume for durability.
-# Pass ":memory:" for an ephemeral in-process store (tests only).
 storage:
   backend: sqlite
   config:
-    # Path to the SQLite database file.
-    # Mount a PersistentVolume at /data for durable storage.
     path: /data/aitra.db
 
 # Site configuration — maps to SiteConfig CRD
 siteConfig:
-  # ElectricityMaps zone identifier (https://app.electricitymaps.com/map)
   gridZone: ""
   electricityCostPerKwh: 0.12
-  # PUE applied as multiplier in chargeback views
   pue: 1.35
-  # Carbon intensity fallback (gCO2/kWh) used when API is unavailable
   carbonIntensityFallback: 400
-  # Carbon source: electricitymaps | watttime | manual
   carbonSource: electricitymaps
 
 # External API credentials
-# Store in Kubernetes secrets and reference by name
 externalApis:
   electricityMaps:
     enabled: true
@@ -114,23 +116,16 @@ externalApis:
   openEI:
     enabled: false
 
-# Air-gapped mode: disable all external API calls
-# All conversion factors are read from siteConfig values above
 airGapped:
   enabled: false
 
-# Default MeasurementPolicy — applied to all namespaces unless overridden
+# Default MeasurementPolicy
 measurementPolicy:
-  defaultAttributionMethod: direct  # direct | proportional
+  defaultAttributionMethod: direct
   calibration:
-    preferredTier: aitra_benchmark  # aitra_benchmark | reference | self_calibrated
+    preferredTier: aitra_benchmark
   budget:
     enabled: false
-    # Per-namespace budget limits — configure per namespace
     namespaces: []
-    # - namespace: inference-prod
-    #   monthlyLimitUSD: 10000
-    #   alertThresholdPct: 80
 
-# Namespace where Aitra Meter is installed
 namespaceOverride: ""
