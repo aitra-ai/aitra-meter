@@ -14,26 +14,25 @@ import (
 	"github.com/aitra-ai/aitra-meter/internal/provider"
 
 	// Import providers to trigger their init() registration.
+	_ "github.com/aitra-ai/aitra-meter/internal/provider/energy/amd"
 	_ "github.com/aitra-ai/aitra-meter/internal/provider/energy/zeus"
 	_ "github.com/aitra-ai/aitra-meter/internal/provider/inference/genericprometheus"
 	_ "github.com/aitra-ai/aitra-meter/internal/provider/inference/vllm"
 )
 
 func main() {
-	energyType     := flag.String("energy-provider",    "zeus", "Energy provider: zeus | nvml")
+	energyType     := flag.String("energy-provider",    "nvml", "Energy provider: nvml | amd")
 	inferenceType  := flag.String("inference-provider", "vllm", "Inference provider: vllm | generic-prometheus")
 	aggregatorAddr := flag.String("aggregator",         "aitra-meter-aggregation:9091", "Aggregation service gRPC address")
 	nodeName       := flag.String("node",               "", "Kubernetes node name (defaults to NODE_NAME env var)")
-	windowSecs     := flag.Int("window-seconds",        30, "Measurement window duration in seconds")
+	windowSecs     := flag.Int(   "window-seconds",     30, "Measurement window duration in seconds")
 	logLevel       := flag.String("log-level",          "info", "Log level: debug | info | warn | error")
-	// Provider-specific config passed as key=value pairs.
 	inferenceEndpoint := flag.String("inference-endpoint", "", "Inference provider metrics URL (e.g. http://localhost:8000/metrics)")
 	flag.Parse()
 
 	log := newLogger(*logLevel)
 	defer log.Sync() //nolint:errcheck
 
-	// Resolve node name: flag > env > error.
 	node := *nodeName
 	if node == "" {
 		node = os.Getenv("NODE_NAME")
@@ -50,7 +49,6 @@ func main() {
 		zap.Int("window_seconds", *windowSecs),
 	)
 
-	// --- energy provider ---------------------------------------------------
 	energyProvider, err := provider.NewEnergy(*energyType, nil)
 	if err != nil {
 		log.Fatal("energy provider init failed",
@@ -59,7 +57,6 @@ func main() {
 		)
 	}
 
-	// --- inference provider ------------------------------------------------
 	inferenceConfig := map[string]string{}
 	if *inferenceEndpoint != "" {
 		inferenceConfig["endpoint"] = *inferenceEndpoint
@@ -72,7 +69,6 @@ func main() {
 		)
 	}
 
-	// --- agent loop --------------------------------------------------------
 	loop, err := agent.New(agent.Config{
 		Node:              node,
 		AggregatorAddr:    *aggregatorAddr,
