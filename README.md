@@ -138,7 +138,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for full guidance.
 ### Reference
 - [Metrics reference](docs/reference/metrics.md) — all Prometheus metrics, types, labels
 - [Configuration reference](docs/reference/configuration.md) — all Helm values and CRD fields
-- [Proto reference](docs/reference/proto.md) — WindowReport proto for custom agent implementations
 - [HTTP API reference](docs/reference/api.md) — aggregation service API
 - [Compatibility](docs/reference/compatibility.md) — provider × hardware × inference server matrix
 - [Glossary](docs/reference/glossary.md)
