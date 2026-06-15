@@ -1,4 +1,4 @@
-# ADR 0004: Pluggable energy and inference provider interfaces
+# Pluggable energy and inference provider interfaces
 
 ## Status
 
@@ -81,7 +81,7 @@ measurementAgent:
       endpoint: "http://localhost:8000/metrics"
 ```
 
-### Built-in providers (Phase 1)
+### Built-in providers
 
 | Interface | Provider name | Backend |
 |---|---|---|
