@@ -1,4 +1,4 @@
-# ADR 0003: Proportional attribution for shared vLLM instances
+# Proportional attribution for shared vLLM instances
 
 ## Status
 
@@ -21,11 +21,11 @@ The attribution method used is stored in every measurement record and surfaced i
 
 - Direct attribution (separate vLLM instances per namespace) is the recommended deployment pattern for enterprise clusters where accurate chargeback is required. It is already common practice. It eliminates attribution approximation entirely.
 - Proportional attribution by token count is the simplest auditable method for shared instances. It is reproducible, deterministic, and easy for operators to verify.
-- More accurate methods (separate prefill and decode windows, per-request energy estimation) were considered for Phase 1 but rejected on complexity grounds. Prefill is compute-bound and decode is memory-bandwidth-bound — the same token count has a different energy profile depending on prompt length vs output length. Correcting for this requires per-request prompt and output token counts, which vLLM's aggregate Prometheus metrics do not provide without additional instrumentation.
+- More accurate methods (separate prefill and decode windows, per-request energy estimation) were considered but rejected on complexity grounds. Prefill is compute-bound and decode is memory-bandwidth-bound — the same token count has a different energy profile depending on prompt length vs output length. Correcting for this requires per-request prompt and output token counts, which vLLM's aggregate Prometheus metrics do not provide without additional instrumentation.
 - Aitra Gateway, when deployed, injects per-request token counts via Envoy access logs. When Gateway is present, the proportional approximation can be replaced with token-exact attribution. This is the upgrade path for operators who need higher accuracy.
 
 ## Consequences
 
 - Operators running shared vLLM instances will see `attribution_method: proportional` in their chargeback reports. The approximation is documented and labeled — it is not silent.
 - Proportional attribution undercharges namespaces with long prompts and short outputs (high prefill fraction) and overcharges namespaces with short prompts and long outputs (high decode fraction). For most mixed workloads, this error is small.
-- Phase 2 will implement prefill/decode energy separation as a measurement improvement, which will allow more accurate proportional attribution without requiring Gateway.
+- A future release will implement prefill/decode energy separation as a measurement improvement, which will allow more accurate proportional attribution without requiring Gateway.
