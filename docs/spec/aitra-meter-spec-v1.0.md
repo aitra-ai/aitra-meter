@@ -1,15 +1,15 @@
 ---
 title: Aitra Meter — Technical Specification
-version: 1.0
+version: 1.1
 status: draft
-date: 2026-05-22
+date: 2026-06-15
 authors: [Aitra contributors]
 soda-foundation: true
 ---
 
 # Aitra Meter — Technical Specification
 
-**Version 1.0 · May 2026 · SODA Foundation**
+**Version 1.1 · June 2026 · SODA Foundation**
 *Status: Draft for review*
 
 ---
@@ -73,9 +73,10 @@ Kubernetes cluster
 
 ```
 GPU hardware
-  └─ NVML → Zeus ZeusMonitor → measurement-agent
+  └─ EnergyProvider (nvml default, zeus or amd alternative)
+       └─ measurement-agent (DaemonSet, one pod per GPU node)
                                         │
-vLLM pods                               │
+vLLM pods                               │ gRPC WindowReport
   └─ /metrics Prometheus endpoint ──────┤
                                         ▼
                               aggregation-service
@@ -86,11 +87,11 @@ vLLM pods                               │
                           ┌─────────────┴─────────────┐
                           ▼                           ▼
                      Prometheus                   SQLite
-                     (hot metrics)           (time-series history)
-                          │                           │
-                   ┌──────┴──────────────────────────┘
-                   ▼
-         Dashboard / Grafana / OTel / Lago
+                     (live metrics)          (measurement history)
+                          │
+                   ┌──────┴──────────────┐
+                   ▼          ▼          ▼
+              Dashboard    Grafana   OTel Collector
 ```
 
 ### 4.3 External dependencies
@@ -112,21 +113,24 @@ All external dependencies have a manual ConfigMap fallback. Air-gapped clusters 
 ### 5.1 Measurement agent (DaemonSet)
 
 **Kind:** DaemonSet  
-**Image:** `ghcr.io/aitra-ai/aitra-meter/measurement-agent:v1`  
+**Image:** `ghcr.io/aitra-ai/aitra-meter/measurement-agent:<version>`  
 **Node selector:** `aitra-ai.github.io/gpu=true`  
 **Security context:** `hostPID: true`, `privileged: true`
 
 **Responsibilities:**
-- Initialize Zeus `ZeusMonitor` per GPU device on the node
-- Call Zeus `begin_window()` at the start of each vLLM request handling cycle
-- Call Zeus `end_window()` at completion, capturing joules for the window
-- Read `vllm:num_requests_running` from the local vLLM Prometheus endpoint to detect idle state
+- Initialize the configured `EnergyProvider` (NVML by default) per GPU device on the node
+- Call `BeginWindow()` at the start of each measurement cycle
+- Call `EndWindow()` at completion, capturing joules for the window
+- Read inference metrics from the configured `InferenceMetricsProvider` to obtain token counts and detect idle state
 - Emit per-window measurements to the aggregation service via gRPC
 
-**Supported hardware (via Zeus):**
-- NVIDIA GPUs: H100 SXM5, H200 SXM, L40S, B200 via NVML
-- AMD GPUs via ROCm telemetry
-- CPU and DRAM energy (secondary)
+**Supported hardware:**
+
+| Provider | Hardware | Notes |
+|---|---|---|
+| `nvml` (default) | NVIDIA GPUs — H100, H200, L40S, A100, B200 | Pure Go via `go-nvml`. NVIDIA only. |
+| `amd` | AMD GPUs — MI300X, MI250X, MI210, ROCm 6.x+ | Via `libamd_smi.so`. AMD only. |
+| `zeus` | NVIDIA + AMD + CPU + DRAM + Apple Silicon + Jetson | Python sidecar required. |
 
 **Multi-GPU handling:**  
 For tensor-parallel models (TP=2, TP=8), the agent reads all NVML device readings on the node and sums them. The aggregated node energy is emitted as a single measurement.
@@ -149,7 +153,7 @@ aitra_measurement_window_stable{node, model_name}
 
 **Kind:** Deployment  
 **Replicas:** 1  
-**Image:** `ghcr.io/aitra-ai/aitra-meter/aggregation-service:v1`
+**Image:** `ghcr.io/aitra-ai/aitra-meter/aggregation-service:<version>`
 
 **Responsibilities:**
 - Receive per-window energy measurements from all measurement agents
@@ -282,29 +286,33 @@ spec:
 }
 ```
 
-### 6.2 SQLite schema
+### 6.2 SQLite schema (default storage backend)
 
 ```sql
-CREATE TABLE aitra_measurements (
-  timestamp        DateTime,
-  cluster          LowCardinality(String),
-  namespace        LowCardinality(String),
-  workload         LowCardinality(String),
-  model            LowCardinality(String),
-  hardware         LowCardinality(String),
-  precision        LowCardinality(String),
-  j_per_token      Float32,
-  co2_per_token    Float32,
-  cost_per_m_tokens Float32,
-  output_tokens    UInt32,
-  energy_joules    Float32,
-  attribution_method LowCardinality(String),
-  calibration_tier LowCardinality(String),
-  measurement_stable UInt8,
-  cv               Float32
-) ENGINE = MergeTree()
-PARTITION BY toYYYYMM(timestamp)
-ORDER BY (cluster, namespace, model, timestamp);
+CREATE TABLE IF NOT EXISTS aitra_measurements (
+  timestamp_ms        INTEGER NOT NULL,
+  cluster             TEXT    NOT NULL,
+  node                TEXT    NOT NULL,
+  namespace           TEXT    NOT NULL,
+  workload            TEXT    NOT NULL,
+  model               TEXT    NOT NULL,
+  hardware            TEXT    NOT NULL,
+  precision           TEXT    NOT NULL,
+  team                TEXT    NOT NULL,
+  cost_centre         TEXT    NOT NULL,
+  energy_joules       REAL    NOT NULL,
+  output_tokens       INTEGER NOT NULL,
+  j_per_token         REAL    NOT NULL,
+  calibration_tier    TEXT    NOT NULL,
+  ref_j_per_token     REAL    NOT NULL,
+  attribution_method  TEXT    NOT NULL,
+  cv                  REAL    NOT NULL,
+  stable              INTEGER NOT NULL,
+  energy_provider     TEXT    NOT NULL,
+  inference_provider  TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_cluster_ns_ts
+  ON aitra_measurements (cluster, namespace, timestamp_ms);
 ```
 
 ---
@@ -493,5 +501,5 @@ No write permissions required on any Kubernetes resource.
 
 ---
 
-*Aitra Meter · Technical Specification v1.0 · SODA Foundation · Apache 2.0 · May 2026*  
+*Aitra Meter · Technical Specification v1.1 · SODA Foundation · Apache 2.0 · June 2026*  
 *github.com/aitra-ai/aitra-meter*
