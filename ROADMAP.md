@@ -23,7 +23,7 @@ See the [changelog](CHANGELOG.md) for the full list of changes per release.
 - Aitra Benchmark publication — first reference dataset for J/token across common models and hardware
 - Per-request attribution within continuous batching (requires Aitra Gateway)
 
-## Phase 2 — multi-cluster federation
+## Multi-cluster federation
 
 - Thanos sidecar integration for cross-cluster Prometheus federation
 - Cross-cluster J/token comparison view
@@ -33,7 +33,7 @@ See the [changelog](CHANGELOG.md) for the full list of changes per release.
 - Hardware efficiency drift alerting via DCIM API
 - Langfuse quality-efficiency correlation views
 
-## Phase 3 — fleet intelligence
+## Fleet intelligence
 
 - Cross-site carbon-aware workload routing
 - Capacity planning recommendations based on historical J/token trends
