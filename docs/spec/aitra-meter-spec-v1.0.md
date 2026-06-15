@@ -494,4 +494,4 @@ No write permissions required on any Kubernetes resource.
 ---
 
 *Aitra Meter · Technical Specification v1.0 · SODA Foundation · Apache 2.0 · May 2026*  
-*github.com/aitra-ai/aitra-meter · Tsinghua University / LF Research*
+*github.com/aitra-ai/aitra-meter*
