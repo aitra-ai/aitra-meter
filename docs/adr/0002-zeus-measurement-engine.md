@@ -1,4 +1,4 @@
-# ADR 0002: Zeus as the measurement engine
+# Zeus as the measurement engine
 
 ## Status
 
@@ -25,5 +25,5 @@ Use Zeus as the measurement engine for all GPU energy readings.
 ## Consequences
 
 - Aitra Meter takes a dependency on the Zeus Python package. Zeus is stable and actively maintained; version pinning in the Helm chart mitigates upgrade risk.
-- Zeus does not perform continuous batching attribution (it measures total energy for a window, not per-request). Aitra Meter must implement proportional attribution on top of Zeus for shared vLLM instances. See ADR 0003.
+- Zeus does not perform continuous batching attribution (it measures total energy for a window, not per-request). Aitra Meter must implement proportional attribution on top of Zeus for shared vLLM instances. See proportional attribution decision.
 - As vLLM versions evolve, Zeus-measured J/token benchmarks may go stale. Aitra Meter must detect vLLM version changes in metric labels and flag calibration baselines as potentially stale when a version change is detected.
