@@ -28,8 +28,8 @@ import (
 
 	// storage backends — blank imports trigger init() registration.
 	// sqlite backend added in feat(storage): SQLite backend PR.
-	_ "github.com/aitra-ai/aitra-meter/internal/storage/duckdb"
 	_ "github.com/aitra-ai/aitra-meter/internal/storage/memory"
+	_ "github.com/aitra-ai/aitra-meter/internal/storage/sqlite"
 )
 
 func main() {
