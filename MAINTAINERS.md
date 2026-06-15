@@ -9,8 +9,6 @@
 | Organisation | Role |
 |---|---|
 | [SODA Foundation](https://github.com/sodafoundation) | Project governance |
-| [Tsinghua University](https://www.tsinghua.edu.cn) | Research association |
-| [LF Research](https://lfresearch.org) | Ecosystem governance |
 
 ## Emeritus maintainers
 
