@@ -1,0 +1,28 @@
+# Alert when J/token increases more than 20% above the 1-hour rolling average.
+#
+# This ScaledObject does not change replica count — it is used as a
+# signal only (minReplicaCount = maxReplicaCount = 1). Pair it with a
+# PrometheusRule alert (see examples/alerting-rules.yaml) for
+# notification, or adjust replica counts to trigger a rollout.
+#
+# Prerequisites: Aitra Meter installed, KEDA installed.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: inference-efficiency-alert
+  namespace: inference-prod
+spec:
+  scaleTargetRef:
+    name: inference-chat
+  minReplicaCount: 1
+  maxReplicaCount: 1
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus-operated.monitoring.svc.cluster.local:9090
+        metricName: aitra_j_per_token_regression_ratio
+        query: |
+          aitra_j_per_token{namespace="inference-prod"}
+          / on()
+          avg_over_time(aitra_j_per_token{namespace="inference-prod"}[1h])
+        threshold: "1.20"
