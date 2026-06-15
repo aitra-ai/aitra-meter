@@ -486,18 +486,9 @@ No write permissions required on any Kubernetes resource.
 
 ---
 
-## 15. Future scope (out of scope for this specification)
+## 15. Future scope
 
-- Multi-cluster federation via Thanos
-- Supercluster topology (cross-cluster tensor parallelism)
-- Cross-cluster TCO comparison view
-- Workload routing recommendation view
-- Prefill vs decode energy separation
-- Aitra Benchmark publication
-- OpenCost MCP server formal integration
-- Per-request attribution within continuous batching (requires Aitra Gateway)
-- Hardware efficiency drift alerting via DCIM API
-- Langfuse quality + efficiency correlation views
+Items outside the scope of this specification are tracked in [ROADMAP.md](../../ROADMAP.md).
 
 ---
 
