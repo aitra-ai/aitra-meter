@@ -30,7 +30,7 @@ const (
 var ErrNoPod = errors.New("no matching pod found")
 
 // PodMetaLookup implements aggregation.PodLookup using direct Kubernetes API
-// calls. Each call issues a filtered List; this is safe for Phase 1 traffic
+// calls. Each call issues a filtered List; this is safe for current traffic
 // volumes (one call per measurement window, typically every 30–60 seconds).
 // A cache layer can be added transparently behind the same interface later.
 type PodMetaLookup struct {
