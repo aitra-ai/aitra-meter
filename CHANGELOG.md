@@ -61,7 +61,7 @@ First tagged release. All Docker-only acceptance criteria closed.
 **Infrastructure**
 - `docker-compose.yml` — local dev stack: Prometheus, aggregation service (SQLite), dashboard
 - `dev/seed.go` — inserts 103k synthetic rows across 30 days
-- Playwright E2E tests — AC-5 (5s render), AC-6 (PUE slider <200ms), AC-7 (formula inline), AC-8 (unknown workload)
+- Playwright E2E tests — render time (5s), PUE slider response (<200ms), derivation formula inline, unknown workload row
 - SQLite integration test — `TestChargebackQuery30Day`, 52k rows, <10s
 - `helm lint` and `helm template --dry-run` added to CI pipeline
 
