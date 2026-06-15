@@ -16,9 +16,9 @@ soda-foundation: true
 
 ## 1. Purpose and scope
 
-This document specifies the technical design of Aitra Meter Phase 1. It covers the measurement methodology, system architecture, component specifications, data model, attribution model, Kubernetes deployment, CNCF integrations, dashboard views, and acceptance criteria.
+This document specifies the technical design of Aitra Meter. It covers the measurement methodology, system architecture, component specifications, data model, attribution model, Kubernetes deployment, CNCF integrations, dashboard views, and acceptance criteria.
 
-Aitra Meter Phase 1 is scoped to a single Kubernetes cluster. Multi-cluster federation, supercluster topologies, and cross-site views are out of scope and are deferred to Phase 2.
+Aitra Meter is scoped to a single Kubernetes cluster. Multi-cluster federation, supercluster topologies, and cross-site views are out of scope and are deferred to a future release.
 
 ---
 
@@ -34,7 +34,7 @@ Aitra Meter Phase 1 is scoped to a single Kubernetes cluster. Multi-cluster fede
 
 **G5** — Integrate natively with the CNCF observability stack (Prometheus, OpenTelemetry, Grafana) already present in the cluster.
 
-**G6** — Surface measurements through six Phase 1 dashboard views, each answering a specific operational question.
+**G6** — Surface measurements through six dashboard views, each answering a specific operational question.
 
 ---
 
@@ -42,7 +42,7 @@ Aitra Meter Phase 1 is scoped to a single Kubernetes cluster. Multi-cluster fede
 
 **NG1** — Aitra Meter does not make routing decisions. Routing is delegated to Aitra Gateway, LiteLLM, Envoy, or Kong.
 
-**NG2** — Aitra Meter does not compare GPU hardware tiers. Hardware comparison requires cross-cluster data and is a Phase 2 capability.
+**NG2** — Aitra Meter does not compare GPU hardware tiers. Hardware comparison requires cross-cluster data and is a future capability.
 
 **NG3** — Aitra Meter does not enforce budget gates in real-time. Budget reporting and alerting are in scope; real-time request blocking requires Aitra Gateway.
 
@@ -50,7 +50,7 @@ Aitra Meter Phase 1 is scoped to a single Kubernetes cluster. Multi-cluster fede
 
 **NG5** — Aitra Meter does not own fleet lifecycle, RMA tracking, or hardware refresh decisions. It exposes a J/token drift signal that DCIM tools consume.
 
-**NG6** — Cross-cluster views, Thanos federation, and supercluster topology are Phase 2.
+**NG6** — Cross-cluster views, Thanos federation, and supercluster topology are future scope.
 
 ---
 
@@ -148,7 +148,7 @@ aitra_measurement_window_stable{node, model_name}
 ### 5.2 Aggregation service (Deployment)
 
 **Kind:** Deployment  
-**Replicas:** 1 (Phase 1)  
+**Replicas:** 1  
 **Image:** `ghcr.io/aitra-ai/aitra-meter/aggregation-service:v1`
 
 **Responsibilities:**
@@ -389,7 +389,7 @@ Missing annotations result in `unknown` for the dimension — records are not dr
 
 ---
 
-## 10. Dashboard views — Phase 1
+## 10. Dashboard views
 
 ### View 1 — J/token by workload × model × hardware
 Live table of every active combination. Calibration tier badge per row. Warning when workload label is absent. Updated on each Prometheus scrape.
@@ -420,11 +420,11 @@ Native ServiceMonitor. Auto-registers with kube-prometheus-stack. No new Prometh
 OTel Collector sidecar. Aggregation service emits via OTLP. Energy cost annotations attached to trace spans when W3C TraceContext is present.
 
 ### Envoy
-Phase 1: Access log ingestion via Fluentbit for attribution enrichment on Istio/Envoy mesh clusters.
+Access log ingestion via Fluentbit for attribution enrichment on Istio/Envoy mesh clusters.
 Aitra Gateway: ext_proc for attribution header injection, ext_authz for budget enforcement.
 
 ### OpenCost
-Shared Prometheus backend. Complementary metrics. OpenCost MCP server integration is Phase 2.
+Shared Prometheus backend. Complementary metrics. OpenCost MCP server integration is future scope.
 
 ### KEDA
 ScaledObject using `aitra_j_per_token` or `aitra_idle_time_ratio` as Prometheus triggers. Configuration is operator responsibility.
@@ -459,26 +459,26 @@ No write permissions required on any Kubernetes resource.
 
 ---
 
-## 14. Acceptance criteria — Phase 1
+## 14. Acceptance criteria
 
 | ID | Criterion | Verification |
 |---|---|---|
-| AC-1 | Measurement agent produces NVML readings within 60s of pod start | DaemonSet rollout + metric presence |
-| AC-2 | J/token CV < 3% over 100-request window for stable workloads | `aitra_measurement_cv` metric |
-| AC-3 | Cluster J/token = Σ energy ÷ Σ tokens (not average of series) | Integration test |
-| AC-4 | Attribution method stored in every measurement record | Storage inspection |
-| AC-5 | All six dashboard views render within 5s | Load time test |
-| AC-6 | PUE slider updates all namespace cost figures within 200ms | UI interaction test |
-| AC-7 | Derivation formula shown inline for every gCO₂/token and $/M tokens value | Visual inspection |
-| AC-8 | `workload=unknown` rows appear for pods with no annotation | Deploy unlabeled pod |
-| AC-9 | Helm install completes on air-gapped cluster | Offline install test |
-| AC-10 | ServiceMonitor auto-registers with kube-prometheus-stack | Install + ServiceMonitor inspection |
-| AC-11 | 30-day namespace chargeback query completes within 10s | SQLite load test |
-| AC-12 | Carbon figures update when API switches to fallback | API failure simulation |
+| 1 | Measurement agent produces NVML readings within 60s of pod start | DaemonSet rollout + metric presence |
+| 2 | J/token CV < 3% over 100-request window for stable workloads | `aitra_measurement_cv` metric |
+| 3 | Cluster J/token = Σ energy ÷ Σ tokens (not average of series) | Integration test |
+| 4 | Attribution method stored in every measurement record | Storage inspection |
+| 5 | All six dashboard views render within 5s | Load time test |
+| 6 | PUE slider updates all namespace cost figures within 200ms | UI interaction test |
+| 7 | Derivation formula shown inline for every gCO₂/token and $/M tokens value | Visual inspection |
+| 8 | `workload=unknown` rows appear for pods with no annotation | Deploy unlabeled pod |
+| 9 | Helm install completes on air-gapped cluster | Offline install test |
+| 10 | ServiceMonitor auto-registers with kube-prometheus-stack | Install + ServiceMonitor inspection |
+| 11 | 30-day namespace chargeback query completes within 10s | SQLite load test |
+| 12 | Carbon figures update when API switches to fallback | API failure simulation |
 
 ---
 
-## 15. Phase 2 scope (out of scope for this specification)
+## 15. Future scope (out of scope for this specification)
 
 - Multi-cluster federation via Thanos
 - Supercluster topology (cross-cluster tensor parallelism)
