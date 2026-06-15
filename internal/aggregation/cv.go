@@ -10,7 +10,7 @@ const (
 	DefaultWindowSize = 100
 
 	// CVThreshold is the coefficient-of-variation threshold above which a
-	// measurement window is flagged unstable (AC-2).
+	// measurement window is flagged unstable.
 	CVThreshold = 0.03
 )
 
