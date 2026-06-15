@@ -1,0 +1,26 @@
+# Scale inference deployment to zero when the node is idle.
+#
+# aitra_idle_time_ratio is the fraction of the last hour a GPU node
+# spent with no active inference requests. When it exceeds 0.4 (40%
+# idle), KEDA scales the deployment to zero replicas after a 5-minute
+# cooldown. Traffic resumes scaling up automatically.
+#
+# Prerequisites: Aitra Meter installed, KEDA installed.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: inference-idle-scaledown
+  namespace: inference-prod
+spec:
+  scaleTargetRef:
+    name: inference-chat
+  minReplicaCount: 0
+  maxReplicaCount: 4
+  cooldownPeriod: 300
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus-operated.monitoring.svc.cluster.local:9090
+        metricName: aitra_idle_time_ratio
+        query: aitra_idle_time_ratio{namespace="inference-prod"}
+        threshold: "0.4"
