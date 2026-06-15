@@ -20,10 +20,10 @@ A reference J/token value for a given model × hardware combination, used to con
 One of `aitra_benchmark`, `reference`, `self_calibrated`, or `uncalibrated`. Stored on every measurement record. Surfaced as a badge in the dashboard.
 
 **Cluster**  
-One Kubernetes control plane. The Phase 1 deployment unit for Aitra Meter. One Helm install per cluster. See also: fleet, supercluster.
+One Kubernetes control plane. The deployment unit for Aitra Meter. One Helm install per cluster. See also: fleet, supercluster.
 
 **Continuous batching**  
-vLLM's request execution model where multiple requests from different tenants are processed in the same GPU forward pass. This makes per-request energy attribution approximate without request-level middleware. See ADR 0003.
+vLLM's request execution model where multiple requests from different tenants are processed in the same GPU forward pass. This makes per-request energy attribution approximate without request-level middleware. See proportional attribution.
 
 **CV gate**  
 Coefficient of variation check over a rolling window of 100 measurement windows. If CV exceeds 3%, measurements are flagged `unstable=true`. They are stored and included in reports, not dropped.
@@ -38,7 +38,7 @@ The autoregressive token generation phase of inference. Memory-bandwidth-bound. 
 The Go interface that energy measurement backends implement. Default: Zeus. Others: NVML direct, DCGM. See `internal/provider/provider.go`.
 
 **Fleet**  
-The totality of all GPU resources across all sites, clusters, and providers an organisation operates. Aitra Meter Phase 1 is scoped to a single cluster. Fleet views are Phase 2.
+The totality of all GPU resources across all sites, clusters, and providers an organisation operates. Aitra Meter is scoped to a single cluster. Fleet views are on the roadmap.
 
 **gCO₂/token**  
 Grams of CO₂ equivalent per output token. Derived: `J/token × gCO₂/kWh ÷ 3,600,000`. The conversion factor comes from ElectricityMaps, WattTime, or a manual SiteConfig value.
@@ -77,7 +77,7 @@ NeurIPS 2025 Datasets and Benchmarks Track spotlight. 46 models, 7 tasks, 1,858 
 The AI model being served. Read from the inference server's metric label. One of the three dimensions in the measurement frame.
 
 **Namespace**  
-A Kubernetes namespace. The attribution unit for chargeback in Phase 1. Maps to an org or team.
+A Kubernetes namespace. The attribution unit for chargeback. Maps to an org or team.
 
 **NVML**  
 NVIDIA Management Library. Provides per-GPU power readings, utilisation, VRAM, and temperature. Accessed via the Zeus library (default) or directly via go-nvml.
@@ -101,7 +101,7 @@ Calibration tier used when neither Aitra Benchmark nor ML.ENERGY v3.0 covers the
 A Kubernetes CRD (`aitra-ai.github.io/v1alpha1`) that configures per-cluster electricity cost, grid zone, PUE, and carbon intensity fallback.
 
 **Supercluster**  
-Multiple Kubernetes clusters on shared high-bandwidth fabric (NVLink, InfiniBand) where tensor parallelism spans cluster boundaries. Phase 2 scope.
+Multiple Kubernetes clusters on shared high-bandwidth fabric (NVLink, InfiniBand) where tensor parallelism spans cluster boundaries. Future scope.
 
 **$/M tokens**  
 US dollars per million output tokens. Derived: `J/token × $/kWh ÷ 3,600 × 1,000,000`. Energy cost only — does not include compute instance cost.
