@@ -24,33 +24,33 @@ Aitra Meter is scoped to a single Kubernetes cluster. Multi-cluster federation, 
 
 ## 2. Goals
 
-**G1** — Continuously measure J/token (joules per output token) for every active workload × model × hardware combination in a Kubernetes cluster.
+- Continuously measure J/token (joules per output token) for every active workload × model × hardware combination in a Kubernetes cluster.
 
-**G2** — Attribute energy consumption to Kubernetes namespaces using cluster metadata, without requiring changes to inference application code.
+- Attribute energy consumption to Kubernetes namespaces using cluster metadata, without requiring changes to inference application code.
 
-**G3** — Derive carbon (gCO₂/token) and cost ($/M tokens) from measured J/token and configurable or API-sourced conversion factors.
+- Derive carbon (gCO₂/token) and cost ($/M tokens) from measured J/token and configurable or API-sourced conversion factors.
 
-**G4** — Deploy entirely via a single Helm chart with no new infrastructure required beyond an existing Kubernetes cluster.
+- Deploy entirely via a single Helm chart with no new infrastructure required beyond an existing Kubernetes cluster.
 
-**G5** — Integrate natively with the CNCF observability stack (Prometheus, OpenTelemetry, Grafana) already present in the cluster.
+- Integrate natively with the CNCF observability stack (Prometheus, OpenTelemetry, Grafana) already present in the cluster.
 
-**G6** — Surface measurements through six dashboard views, each answering a specific operational question.
+- Surface measurements through six dashboard views, each answering a specific operational question.
 
 ---
 
 ## 3. Non-goals
 
-**NG1** — Aitra Meter does not make routing decisions. Routing is delegated to Aitra Gateway, LiteLLM, Envoy, or Kong.
+- Aitra Meter does not make routing decisions. Routing is delegated to Aitra Gateway, LiteLLM, Envoy, or Kong.
 
-**NG2** — Aitra Meter does not compare GPU hardware tiers. Hardware comparison requires cross-cluster data and is a future capability.
+- Aitra Meter does not compare GPU hardware tiers. Hardware comparison requires cross-cluster data and is a future capability.
 
-**NG3** — Aitra Meter does not enforce budget gates in real-time. Budget reporting and alerting are in scope; real-time request blocking requires Aitra Gateway.
+- Aitra Meter does not enforce budget gates in real-time. Budget reporting and alerting are in scope; real-time request blocking requires Aitra Gateway.
 
-**NG4** — Aitra Meter does not track individual user identity. User-level attribution requires Aitra Gateway to inject a user-ID header per request.
+- Aitra Meter does not track individual user identity. User-level attribution requires Aitra Gateway to inject a user-ID header per request.
 
-**NG5** — Aitra Meter does not own fleet lifecycle, RMA tracking, or hardware refresh decisions. It exposes a J/token drift signal that DCIM tools consume.
+- Aitra Meter does not own fleet lifecycle, RMA tracking, or hardware refresh decisions. It exposes a J/token drift signal that DCIM tools consume.
 
-**NG6** — Cross-cluster views, Thanos federation, and supercluster topology are future scope.
+- Cross-cluster views, Thanos federation, and supercluster topology are future scope.
 
 ---
 
