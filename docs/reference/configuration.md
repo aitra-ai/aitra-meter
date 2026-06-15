@@ -37,7 +37,7 @@ Complete reference for all Helm values, CRD fields, and pod annotations.
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `aggregationService.image.repository` | string | `ghcr.io/aitra-ai/aitra-meter/aggregation-service` | Container image |
-| `aggregationService.replicas` | int | `1` | Replica count. Phase 1 supports 1 only |
+| `aggregationService.replicas` | int | `1` | Replica count. Single-cluster deployment supports 1 only |
 | `aggregationService.port` | int | `8080` | Metrics and API port |
 | `aggregationService.logLevel` | string | `info` | Log level |
 | `aggregationService.resources.*` | — | see values.yaml | Resource requests and limits |
