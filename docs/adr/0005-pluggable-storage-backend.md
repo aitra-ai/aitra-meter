@@ -1,4 +1,4 @@
-# ADR 0005: Pluggable storage backend interface
+# Pluggable storage backend interface
 
 ## Status
 
@@ -10,7 +10,7 @@ The initial implementation hard-coded ClickHouse as the only storage backend.
 Three problems emerged:
 
 1. **Broken pattern.** EnergyProvider and InferenceMetricsProvider are both behind
-   pluggable interfaces (ADR 0004). ClickHouse being a concrete dependency in
+   pluggable interfaces (see pluggable provider interfaces decision). ClickHouse being a concrete dependency in
    `internal/clickhouse/writer.go` is inconsistent and makes the same mistakes
    the provider pattern was designed to prevent.
 
@@ -83,7 +83,7 @@ because `loop_test.go` already uses a stub that matches the new interface.
 
 ## Consequences
 
-- ClickHouse remains the default and the right choice for AC-11 query performance.
+- ClickHouse remains a viable backend for high-throughput query performance.
   Nothing about the preference changes — it just stops being the only option.
 - The `LowCardinality` types and `MergeTree` ordering stay in the ClickHouse
   implementation. The interface is designed around what Aitra Meter needs, not
