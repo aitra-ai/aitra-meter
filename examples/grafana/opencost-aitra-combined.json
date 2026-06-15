@@ -1,0 +1,30 @@
+{
+  "title": "OpenCost + Aitra Meter — Cost per namespace",
+  "description": "Side-by-side: GPU-hour cost (OpenCost) vs token cost (Aitra Meter) per namespace. The gap between these two views surfaces serving efficiency differences that neither tool sees alone.",
+  "tags": ["aitra-meter", "opencost", "finops"],
+  "panels": [
+    {
+      "title": "GPU-hour cost per namespace (OpenCost)",
+      "type": "bargauge",
+      "targets": [
+        {
+          "expr": "sum by (namespace) (container_gpu_allocation * on(node) group_left() node_gpu_hourly_cost)",
+          "legendFormat": "{{namespace}}"
+        }
+      ],
+      "description": "Source: OpenCost. Cost per namespace based on GPU-hour allocation."
+    },
+    {
+      "title": "Token cost per namespace — $/M tokens (Aitra Meter)",
+      "type": "bargauge",
+      "targets": [
+        {
+          "expr": "sum by (namespace) (aitra_cost_per_million_tokens_usd)",
+          "legendFormat": "{{namespace}}"
+        }
+      ],
+      "description": "Source: Aitra Meter. Cost per namespace based on output token volume."
+    }
+  ],
+  "schemaVersion": 38
+}
