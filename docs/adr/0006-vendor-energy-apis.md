@@ -1,4 +1,4 @@
-# ADR-0006: Use Vendor APIs Directly for GPU Energy Measurement
+# Use vendor APIs directly for GPU energy measurement
 
 **Status:** Accepted  
 **Date:** June 2026
@@ -67,5 +67,5 @@ the specification for what to handle — not as a runtime dependency.
   `nvml` or `amd`, with a pointer to the community extension guide.
 - Build requires `CGO_ENABLED=1` (already the case; go-nvml uses CGO).
 - No change to the `EnergyProvider` interface.
-- AC-1 and AC-2 (GPU hardware validation) are unaffected — they test the
+- GPU hardware validation tests are unaffected — they test the
   measurement result, not the provider implementation.
