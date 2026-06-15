@@ -160,7 +160,6 @@ Single-cluster measurement is complete and hardware-validated. This project foll
 ## Governance
 
 Aitra Meter is a [SODA Foundation](https://github.com/sodafoundation) project.
-Research association: Tsinghua University / LF Research.
 
 ## License
 
