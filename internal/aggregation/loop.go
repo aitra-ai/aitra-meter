@@ -5,6 +5,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aitra-ai/aitra-meter/internal/export/otlp"
+
 	measurementv1 "github.com/aitra-ai/aitra-meter/api/proto/measurement/v1"
 	"github.com/aitra-ai/aitra-meter/internal/metrics"
 	"github.com/aitra-ai/aitra-meter/internal/model"
@@ -39,6 +41,10 @@ type Loop struct {
 
 	mu      sync.Mutex
 	cvByKey map[string]*CVTracker // key: node+"\x00"+modelName
+
+	// OTLPExporter is optional. When non-nil, each window is also emitted
+	// via OTLP to an OpenTelemetry Collector.
+	OTLPExporter *otlp.Exporter
 }
 
 // NewLoop creates a Loop. All arguments must be non-nil.
@@ -165,6 +171,20 @@ func (l *Loop) ReportWindow(
 		InferenceProvider: w.InferenceProvider,
 	}
 	_ = l.writer.Write(ctx, rec) // async writers never block; errors are logged by the writer
+
+	// --- OTLP export (optional) -------------------------------------------
+	if l.OTLPExporter != nil {
+		idleRatioVal := 0.0
+		if w.OutputTokens == 0 {
+			idleRatioVal = 1.0
+		}
+		l.OTLPExporter.RecordWindow(ctx, otlp.WindowAttrs{
+			Model:             w.ModelName,
+			InferenceProvider: w.InferenceProvider,
+			Node:              w.Node,
+			Namespace:         attr.Namespace,
+		}, jpt, w.EnergyJoules, w.PowerWatts, idleRatioVal)
+	}
 
 	return &measurementv1.WindowAck{Accepted: true}, nil
 }
