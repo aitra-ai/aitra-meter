@@ -307,7 +307,7 @@ func TestLoopConcurrentWindows(t *testing.T) {
 	}
 }
 
-// AC-3: Cluster J/token must be computed as Σenergy ÷ Σtokens, not as the
+// Cluster J/token must be computed as Σenergy ÷ Σtokens, not as the
 // average of per-window ratios. These two formulas diverge whenever window
 // token counts differ, so we inject two windows with unequal token counts and
 // verify that the stored energy and token values allow the correct aggregate
@@ -369,7 +369,7 @@ func TestLoopClusterJPerTokenIsSumOfEnergyDividedBySumOfTokens(t *testing.T) {
 	}
 }
 
-// AC-4: Every storage record must have attribution_method set to a known
+// Every storage record must have attribution_method set to a known
 // value ("direct" or "proportional") — never empty. This is true regardless
 // of whether pod lookup succeeds or falls back to "unknown" namespace.
 func TestLoopAttributionMethodNeverEmpty(t *testing.T) {
