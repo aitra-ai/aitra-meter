@@ -16,7 +16,7 @@ const (
 
 // NodeHardwareLookup implements aggregation.NodeHardware using direct
 // Kubernetes API calls. One call per measurement window is acceptable
-// at Phase 1 volumes; a cache layer can be added behind the same interface.
+// at current volumes; a cache layer can be added behind the same interface.
 type NodeHardwareLookup struct {
 	client kubernetes.Interface
 }
