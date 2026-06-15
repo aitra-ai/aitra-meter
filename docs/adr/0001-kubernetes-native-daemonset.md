@@ -1,4 +1,4 @@
-# ADR 0001: Kubernetes-native DaemonSet deployment
+# Kubernetes-native DaemonSet deployment
 
 ## Status
 
@@ -23,4 +23,4 @@ Deploy the measurement agent as a Kubernetes DaemonSet with `hostPID: true` and 
 
 - Operators must label GPU-bearing nodes with `aitra.io/gpu=true` at cluster setup. This is a one-time administrative step, documented in the Helm chart README.
 - The DaemonSet requires privileged access, which some cluster policies restrict. For such clusters, operators must add a PodSecurityPolicy or equivalent exception for the `aitra-system` namespace.
-- Cross-node tensor parallelism (TP jobs spanning multiple Kubernetes clusters) cannot be measured by a per-node DaemonSet. This is deferred to Phase 2 (supercluster topology).
+- Cross-node tensor parallelism (TP jobs spanning multiple Kubernetes clusters) cannot be measured by a per-node DaemonSet. This is deferred to a future release (supercluster topology).
