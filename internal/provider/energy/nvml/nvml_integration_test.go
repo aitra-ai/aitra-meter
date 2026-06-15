@@ -45,7 +45,7 @@ func TestNVMLInit(t *testing.T) {
 	}
 }
 
-// TestNVMLReadsEnergyWithinWindow verifies AC-1:
+// TestNVMLReadsEnergyWithinWindow verifies that the NVML provider:
 // the agent can begin a measurement window, wait for real inference activity,
 // and end the window with a positive joule reading.
 //
@@ -75,7 +75,7 @@ func TestNVMLReadsEnergyWithinWindow(t *testing.T) {
 
 	t.Logf("energy consumed in 3s idle window: %.4f J", joules)
 	if joules <= 0 {
-		t.Errorf("energy = %.6f J, want > 0 (AC-1: NVML must return positive joule reading)", joules)
+		t.Errorf("energy = %.6f J, want > 0 (NVML must return a positive joule reading)", joules)
 	}
 }
 
@@ -111,7 +111,7 @@ func TestNVMLWindowNotFound(t *testing.T) {
 	}
 }
 
-// TestNVMLCVGate verifies AC-2:
+// TestNVMLCVGate verifies that J/token CV:
 // after enough measurement windows, the CV over the last 100 stays below 3%
 // under stable (idle) conditions.
 //
