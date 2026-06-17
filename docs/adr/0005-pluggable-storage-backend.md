@@ -61,17 +61,17 @@ type Backend interface {
 
 | Name | Package | When to use |
 |---|---|---|
-| `clickhouse` | `internal/storage/clickhouse` | Default. Best analytical query performance. |
-| `duckdb` | `internal/storage/duckdb` | Embedded, no server. Single-site or dev. |
+| `sqlite` | `internal/storage/sqlite` | Default. Pure Go, no CGO, no server. Embedded at /data/aitra.db. |
 | `memory` | `internal/storage/memory` | Tests only. Never in production images. |
-| `postgres` | `internal/storage/postgres` (community) | Operators already running TimescaleDB. |
+| `clickhouse` | `internal/storage/clickhouse` (future) | Best analytical query performance at scale. Not in v0.8.0. |
 
 ## Configuration
 
 ```yaml
 storage:
-  backend: clickhouse   # clickhouse | duckdb | postgres
-  config: {}
+  backend: sqlite   # sqlite (default) | clickhouse (future)
+  config:
+    path: /data/aitra.db
 ```
 
 ## Migration
