@@ -24,7 +24,7 @@ Complete reference for all Helm values, CRD fields, and pod annotations.
 | `measurementAgent.resources.requests.memory` | string | `128Mi` | Memory request |
 | `measurementAgent.resources.limits.cpu` | string | `500m` | CPU limit |
 | `measurementAgent.resources.limits.memory` | string | `256Mi` | Memory limit |
-| `measurementAgent.energyProvider.type` | string | `zeus` | Energy provider name. Built-in: `zeus`, `nvml` |
+| `measurementAgent.energyProvider.type` | string | `nvml` | Energy provider name. Built-in: `nvml`, `amd`. Community: `zeus` |
 | `measurementAgent.energyProvider.config` | map | `{}` | Provider-specific config key-value pairs |
 | `measurementAgent.inferenceProvider.type` | string | `vllm` | Inference provider name. Built-in: `vllm`, `generic-prometheus` |
 | `measurementAgent.inferenceProvider.config.endpoint` | string | `http://localhost:8000/metrics` | Inference server metrics endpoint |
