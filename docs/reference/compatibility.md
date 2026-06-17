@@ -4,8 +4,9 @@
 
 | Provider | `type` value | Hardware | Notes |
 |---|---|---|---|
-| Zeus (default) | `zeus` | NVIDIA H100, H200, L40S, B200, AMD GPUs, CPU/DRAM, Apple Silicon, Jetson | Requires Python sidecar. Apache 2.0. |
-| NVML direct | `nvml` | NVIDIA GPUs only | Pure Go. No Python dependency. Fewer hardware types. |
+| NVML | `nvml` | NVIDIA GPUs — H100, H200, L40S, A100, B200 | Default. Pure Go. No sidecar. |
+| AMD | `amd` | AMD GPUs — MI300X, MI250X, MI210, ROCm 6.x+ | Via libamd_smi.so. No sidecar. |
+| Zeus | `zeus` (community) | NVIDIA + AMD + CPU/DRAM + Apple Silicon + Jetson | Requires zeusd sidecar. Use when NVML/AMD access is restricted or CPU+DRAM energy is needed alongside GPU. |
 | DCGM | `dcgm` (community) | NVIDIA GPUs | NVIDIA-proprietary. Richer GPU telemetry. |
 
 ## Inference providers
@@ -72,12 +73,12 @@ measurementAgent:
 
 | GPU | Supported | Energy provider |
 |---|---|---|
-| NVIDIA H100 SXM5 | Yes | zeus, nvml |
-| NVIDIA H200 SXM | Yes | zeus, nvml |
-| NVIDIA L40S | Yes | zeus, nvml |
-| NVIDIA B200 | Yes | zeus, nvml |
-| NVIDIA A100 | Yes | zeus, nvml |
-| AMD MI300X | Yes (zeus only) | zeus |
-| AMD MI250X | Yes (zeus only) | zeus |
-| Apple Silicon (M-series) | Yes (zeus only) | zeus |
+| NVIDIA H100 SXM5 | Yes | nvml, zeus |
+| NVIDIA H200 SXM | Yes | nvml, zeus |
+| NVIDIA L40S | Yes | nvml, zeus |
+| NVIDIA B200 | Yes | nvml, zeus |
+| NVIDIA A100 | Yes | nvml, zeus |
+| AMD MI300X | Yes | amd, zeus |
+| AMD MI250X | Yes | amd, zeus |
+| Apple Silicon (M-series) | Community (zeus only) | zeus |
 | Intel GPU | Planned | — |
