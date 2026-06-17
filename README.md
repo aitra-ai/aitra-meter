@@ -35,10 +35,10 @@ helm install aitra-meter aitra/aitra-meter \
   --set siteConfig.carbonIntensityFallback=400
 ```
 
-All pods reach Running within 60 seconds. Verify the Zeus energy sidecar is ready before expecting measurements:
+All pods reach Running within 60 seconds:
 
 ```bash
-kubectl logs -n aitra-system -l app=aitra-meter-agent -c zeus-sidecar | grep "socket ready"
+kubectl get pods -n aitra-system
 ```
 
 Then open the dashboard:
@@ -54,8 +54,9 @@ See the [getting started guide](docs/guides/getting-started.md) for a complete w
 
 ```
 GPU hardware
-  └─ Zeus sidecar (default — NVIDIA via NVML, AMD via ROCm, CPU+DRAM, Jetson)
-  └─ NVML (alternative — pure Go, NVIDIA only, no sidecar)
+  └─ NVML (default — NVIDIA GPUs, pure Go, no sidecar)
+  └─ AMD (AMD GPUs via libamd_smi.so, ROCm 6.x+)
+  └─ Zeus (community extension — operators running zeusd)
 
 Inference servers
   └─ vLLM / TGI / SGLang / Ollama (/metrics endpoint)
