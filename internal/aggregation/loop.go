@@ -129,6 +129,14 @@ func (l *Loop) ReportWindow(
 	metrics.NamespaceTokensTotal.WithLabelValues(attr.Namespace).
 		Add(float64(w.OutputTokens))
 
+	// Model-level efficiency primitives (issue #40). The cost/tenant/serving
+	// metrics in the same family are populated by the SiteConfig-cost and
+	// idle-tracking follow-up.
+	metrics.ModelTokensTotal.WithLabelValues(attr.Namespace, w.ModelName, hw, attr.Workload).
+		Add(float64(w.OutputTokens))
+	metrics.ModelEnergyPer1MTokens.WithLabelValues(attr.Namespace, w.ModelName, hw, attr.Workload).
+		Set(jpt * 1e6)
+
 	metrics.MeasurementCV.WithLabelValues(w.Node, w.ModelName).Set(cvVal)
 	stableF := 0.0
 	if stable {
