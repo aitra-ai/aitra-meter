@@ -67,11 +67,15 @@ func (h *staticHardware) Hardware(_ context.Context, _ string) string { return h
 // --- helpers ----------------------------------------------------------------
 
 func newTestLoop(pods map[string]PodMeta, policy PolicyConfig, calEntries map[CalibrationKey]CalibrationEntry) (*Loop, *recordSink) {
+	return newTestLoopWithSite(pods, policy, calEntries, SiteParams{})
+}
+
+func newTestLoopWithSite(pods map[string]PodMeta, policy PolicyConfig, calEntries map[CalibrationKey]CalibrationEntry, site SiteParams) (*Loop, *recordSink) {
 	sink := &recordSink{}
 	resolver := NewResolver(&stubLookup{pods: pods}, policy)
 	cal := NewCalibrationTableFromMap(calEntries)
 	hw := &staticHardware{label: "h100"}
-	return NewLoop("test-cluster", resolver, cal, hw, sink), sink
+	return NewLoop("test-cluster", resolver, cal, hw, sink, site), sink
 }
 
 func baseReport() *measurementv1.WindowReport {
@@ -158,6 +162,88 @@ func TestLoopModelEnergyPer1MTokens(t *testing.T) {
 	want := (412.4 / 1328.0) * 1e6
 	if math.Abs(got-want) > 1e-3 {
 		t.Errorf("model_energy_per_1m_tokens = %v, want %v", got, want)
+	}
+}
+
+// TestLoopCostCarbonDerivation checks the cost + carbon metrics derive from
+// J/token and the configured site factors (issue #40 PR-2).
+func TestLoopCostCarbonDerivation(t *testing.T) {
+	const model = "cost-model"
+	site := SiteParams{ElectricityCostPerKWh: 0.12, GridGCO2PerKWh: 400}
+	loop, _ := newTestLoopWithSite(
+		map[string]PodMeta{"node-1/" + model: {Namespace: "prod", Workload: "chat", Team: "platform", CostCentre: "cc-1"}},
+		PolicyConfig{DefaultMethod: AttributionDirect}, nil, site,
+	)
+	tenant := metrics.TenantCostUSDTotal.WithLabelValues("prod", "platform", "cc-1")
+	before := testutil.ToFloat64(tenant)
+	w := baseReport()
+	w.ModelName = model
+	if _, err := loop.ReportWindow(context.Background(), w); err != nil {
+		t.Fatalf("ReportWindow: %v", err)
+	}
+
+	jpt := 412.4 / 1328.0
+	wantCostPerM := jpt / 3_600_000.0 * 0.12 * 1e6
+	if got := testutil.ToFloat64(metrics.CostPerMillionTokensUSD.WithLabelValues("prod", "chat", model, "h100", "manual")); math.Abs(got-wantCostPerM) > 1e-9 {
+		t.Errorf("cost_per_million = %v, want %v", got, wantCostPerM)
+	}
+	if got := testutil.ToFloat64(metrics.ModelCostPer1MTokensUSD.WithLabelValues("prod", model, "h100", "chat")); math.Abs(got-wantCostPerM) > 1e-9 {
+		t.Errorf("model_cost_per_1m = %v, want %v", got, wantCostPerM)
+	}
+	wantCO2 := jpt / 3_600_000.0 * 400
+	if got := testutil.ToFloat64(metrics.CO2PerTokenGrams.WithLabelValues("prod", "chat", model, "h100", "manual")); math.Abs(got-wantCO2) > 1e-12 {
+		t.Errorf("co2_per_token = %v, want %v", got, wantCO2)
+	}
+	wantTenantDelta := 412.4 / 3_600_000.0 * 0.12
+	if got := testutil.ToFloat64(tenant) - before; math.Abs(got-wantTenantDelta) > 1e-12 {
+		t.Errorf("tenant_cost delta = %v, want %v", got, wantTenantDelta)
+	}
+}
+
+// TestLoopCostDisabledWhenUnset checks cost metrics stay unset without site config.
+func TestLoopCostDisabledWhenUnset(t *testing.T) {
+	const model = "no-cost-model"
+	loop, _ := newTestLoop(
+		map[string]PodMeta{"node-1/" + model: {Namespace: "prod", Workload: "chat"}},
+		PolicyConfig{DefaultMethod: AttributionDirect}, nil,
+	)
+	w := baseReport()
+	w.ModelName = model
+	if _, err := loop.ReportWindow(context.Background(), w); err != nil {
+		t.Fatalf("ReportWindow: %v", err)
+	}
+	if got := testutil.ToFloat64(metrics.ModelCostPer1MTokensUSD.WithLabelValues("prod", model, "h100", "chat")); got != 0 {
+		t.Errorf("model_cost set to %v with no site config, want 0 (unset)", got)
+	}
+}
+
+// TestLoopIdleWindowTracking checks idle (zero-token) windows are not aggregated
+// but do drive idle power and the serving/idle ratios (issue #40 PR-2).
+func TestLoopIdleWindowTracking(t *testing.T) {
+	const node = "idle-node"
+	loop, sink := newTestLoop(map[string]PodMeta{}, PolicyConfig{}, nil)
+	w := baseReport()
+	w.Node = node
+	w.OutputTokens = 0 // idle
+	w.PowerWatts = 95.0
+	ack, err := loop.ReportWindow(context.Background(), w)
+	if err != nil {
+		t.Fatalf("ReportWindow: %v", err)
+	}
+	if ack.Accepted {
+		t.Error("idle window Accepted = true, want false")
+	}
+	if sink.len() != 0 {
+		t.Errorf("idle window wrote %d records, want 0", sink.len())
+	}
+	if got := testutil.ToFloat64(metrics.IdlePowerWatts.WithLabelValues(node)); got != 95.0 {
+		t.Errorf("idle_power_watts = %v, want 95", got)
+	}
+	if got := testutil.ToFloat64(metrics.GPUServingUtilizationRatio.WithLabelValues(node)); got != 0 {
+		t.Errorf("serving_ratio = %v, want 0 after one idle window", got)
+	}
+	if got := testutil.ToFloat64(metrics.IdleTimeRatio.WithLabelValues(node)); got != 1 {
+		t.Errorf("idle_time_ratio = %v, want 1 after one idle window", got)
 	}
 }
 

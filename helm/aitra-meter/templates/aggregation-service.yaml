@@ -36,6 +36,13 @@ spec:
               value: sqlite
             - name: SQLITE_PATH
               value: {{ .Values.storage.config.path | default "/data/aitra.db" | quote }}
+            # Site cost/carbon factors for cost + carbon metric derivation (issue #40).
+            - name: ELECTRICITY_COST_PER_KWH
+              value: {{ .Values.siteConfig.electricityCostPerKwh | quote }}
+            - name: GRID_GCO2_PER_KWH
+              value: {{ .Values.siteConfig.carbonIntensityFallback | quote }}
+            - name: CARBON_SOURCE
+              value: {{ .Values.siteConfig.carbonSource | quote }}
           ports:
             - name: metrics
               containerPort: {{ .Values.aggregationService.port }}

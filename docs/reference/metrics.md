@@ -266,7 +266,7 @@ Metrics are exposed at:
 
 **Type:** Gauge  
 **Source:** Aggregation service  
-**Description:** USD per million output tokens (energy cost), by model series. Same derivation as `aitra_cost_per_million_tokens_usd`. *Populated by the SiteConfig-cost follow-up to #40.*
+**Description:** USD per million output tokens (energy cost), by model series. Same derivation as `aitra_cost_per_million_tokens_usd`.
 
 | Label | Description |
 |---|---|
@@ -281,7 +281,7 @@ Metrics are exposed at:
 
 **Type:** Counter  
 **Source:** Aggregation service  
-**Description:** Cumulative energy cost in USD attributed to a tenant, summed per measurement window. *Populated by the SiteConfig-cost follow-up to #40.*
+**Description:** Cumulative energy cost in USD attributed to a tenant, summed per measurement window.
 
 | Label | Description |
 |---|---|
@@ -295,7 +295,7 @@ Metrics are exposed at:
 
 **Type:** Gauge  
 **Source:** Aggregation service  
-**Description:** Fraction of elapsed time a node was executing inference requests: `(window − idle) / window`. Distinct from DCGM SM utilization. *Populated by the idle-tracking follow-up to #40.*
+**Description:** Fraction of elapsed time a node was executing inference requests: `(window − idle) / window`. Distinct from DCGM SM utilization.
 
 | Label | Description |
 |---|---|
