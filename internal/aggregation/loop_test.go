@@ -6,7 +6,10 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
+
 	measurementv1 "github.com/aitra-ai/aitra-meter/api/proto/measurement/v1"
+	"github.com/aitra-ai/aitra-meter/internal/metrics"
 )
 
 // --- stubs ------------------------------------------------------------------
@@ -113,6 +116,51 @@ func TestLoopJPerTokenArithmetic(t *testing.T) {
 	}
 }
 
+// TestLoopModelTokensTotalAccumulates checks the model-level token counter is
+// monotonic across windows. A unique model label isolates this counter child
+// from other tests (Prometheus counters are process-global and never reset).
+func TestLoopModelTokensTotalAccumulates(t *testing.T) {
+	const model = "tokens-accum-model"
+	loop, _ := newTestLoop(
+		map[string]PodMeta{"node-1/" + model: {Namespace: "prod", Workload: "chat"}},
+		PolicyConfig{DefaultMethod: AttributionDirect},
+		nil,
+	)
+	child := metrics.ModelTokensTotal.WithLabelValues("prod", model, "h100", "chat")
+	before := testutil.ToFloat64(child)
+	for i := 0; i < 3; i++ {
+		w := baseReport()
+		w.ModelName = model
+		if _, err := loop.ReportWindow(context.Background(), w); err != nil {
+			t.Fatalf("ReportWindow: %v", err)
+		}
+	}
+	if got, want := testutil.ToFloat64(child)-before, 3.0*1328.0; got != want {
+		t.Errorf("model_tokens_total delta = %v, want %v", got, want)
+	}
+}
+
+// TestLoopModelEnergyPer1MTokens checks the J/1M-tokens gauge reflects the
+// current window's J/token scaled to one million tokens.
+func TestLoopModelEnergyPer1MTokens(t *testing.T) {
+	const model = "energy1m-model"
+	loop, _ := newTestLoop(
+		map[string]PodMeta{"node-1/" + model: {Namespace: "prod", Workload: "chat"}},
+		PolicyConfig{DefaultMethod: AttributionDirect},
+		nil,
+	)
+	w := baseReport()
+	w.ModelName = model
+	if _, err := loop.ReportWindow(context.Background(), w); err != nil {
+		t.Fatalf("ReportWindow: %v", err)
+	}
+	got := testutil.ToFloat64(metrics.ModelEnergyPer1MTokens.WithLabelValues("prod", model, "h100", "chat"))
+	want := (412.4 / 1328.0) * 1e6
+	if math.Abs(got-want) > 1e-3 {
+		t.Errorf("model_energy_per_1m_tokens = %v, want %v", got, want)
+	}
+}
+
 func TestLoopZeroTokensRejected(t *testing.T) {
 	loop, sink := newTestLoop(nil, PolicyConfig{}, nil)
 	w := baseReport()
@@ -131,16 +179,16 @@ func TestLoopZeroTokensRejected(t *testing.T) {
 
 func TestLoopAttributionMethod(t *testing.T) {
 	tests := []struct {
-		name    string
-		ns      string
-		policy  PolicyConfig
-		wantM   AttributionMethod
+		name   string
+		ns     string
+		policy PolicyConfig
+		wantM  AttributionMethod
 	}{
 		{
-			name:  "direct",
-			ns:    "prod",
+			name:   "direct",
+			ns:     "prod",
 			policy: PolicyConfig{DefaultMethod: AttributionDirect},
-			wantM: AttributionDirect,
+			wantM:  AttributionDirect,
 		},
 		{
 			name: "proportional override",
