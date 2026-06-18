@@ -6,8 +6,8 @@
 |---|---|---|---|
 | NVML | `nvml` | NVIDIA GPUs — H100, H200, L40S, A100, B200 | Default. Pure Go. No sidecar. |
 | AMD | `amd` | AMD GPUs — MI300X, MI250X, MI210, ROCm 6.x+ | Via libamd_smi.so. No sidecar. |
+| DCGM | `dcgm` | NVIDIA GPUs | Scrapes a node-local dcgm-exporter Prometheus endpoint. Pure Go, no sidecar. Resolution bounded by the exporter scrape interval. |
 | Zeus | `zeus` (community) | NVIDIA + AMD + CPU/DRAM + Apple Silicon + Jetson | Requires zeusd sidecar. Use when NVML/AMD access is restricted or CPU+DRAM energy is needed alongside GPU. |
-| DCGM | `dcgm` (community) | NVIDIA GPUs | NVIDIA-proprietary. Richer GPU telemetry. |
 
 ## Inference providers
 
@@ -73,11 +73,11 @@ measurementAgent:
 
 | GPU | Supported | Energy provider |
 |---|---|---|
-| NVIDIA H100 SXM5 | Yes | nvml, zeus |
-| NVIDIA H200 SXM | Yes | nvml, zeus |
-| NVIDIA L40S | Yes | nvml, zeus |
-| NVIDIA B200 | Yes | nvml, zeus |
-| NVIDIA A100 | Yes | nvml, zeus |
+| NVIDIA H100 SXM5 | Yes | nvml, zeus, dcgm |
+| NVIDIA H200 SXM | Yes | nvml, zeus, dcgm |
+| NVIDIA L40S | Yes | nvml, zeus, dcgm |
+| NVIDIA B200 | Yes | nvml, zeus, dcgm |
+| NVIDIA A100 | Yes | nvml, zeus, dcgm |
 | AMD MI300X | Yes | amd, zeus |
 | AMD MI250X | Yes | amd, zeus |
 | Apple Silicon (M-series) | Community (zeus only) | zeus |
