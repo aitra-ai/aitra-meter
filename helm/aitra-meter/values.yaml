@@ -39,6 +39,11 @@ measurementAgent:
   energyProvider:
     type: nvml
     config: {}
+  # dcgm example (scrape a node-local dcgm-exporter instead of reading NVML in-process):
+  # energyProvider:
+  #   type: dcgm
+  #   config:
+  #     endpoint: "http://localhost:9400/metrics"
   inferenceProvider:
     type: vllm
     config:
