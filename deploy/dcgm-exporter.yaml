@@ -1,0 +1,40 @@
+# dcgm-exporter DaemonSet — exposes per-GPU energy/power on :9400. The aitra-meter
+# DCGM EnergyProvider (issue #35) scrapes this. Runs only on schedulable nodes
+# (xspark here; control-plane is cordoned). Read-only GPU telemetry.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: dcgm-exporter
+  namespace: aitra-system
+  labels: { app: dcgm-exporter }
+spec:
+  selector:
+    matchLabels: { app: dcgm-exporter }
+  template:
+    metadata:
+      labels: { app: dcgm-exporter }
+    spec:
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: dcgm-exporter
+          image: nvcr.io/nvidia/k8s/dcgm-exporter:3.3.9-3.6.1-ubuntu22.04
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            privileged: true
+          ports:
+            - { name: metrics, containerPort: 9400 }
+          env:
+            - { name: DCGM_EXPORTER_LISTEN, value: ":9400" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dcgm-exporter
+  namespace: aitra-system
+  labels: { app: dcgm-exporter }
+spec:
+  type: ClusterIP
+  selector: { app: dcgm-exporter }
+  ports:
+    - { name: metrics, port: 9400, targetPort: metrics }
