@@ -1,6 +1,12 @@
 # Aitra Meter — reference Prometheus alerting rules.
 # Apply with: kubectl apply -f examples/alerting-rules.yaml
 # Or mount via the Prometheus Operator PrometheusRule CRD.
+#
+# TenantCostBudgetExceeded compares 24h tenant cost against a per-namespace
+# budget exposed as aitra_tenant_cost_budget_usd_24h. The Helm chart renders that
+# recording rule from the `costBudgets` value — see docs/guides/cost-budgets.md.
+# It also reads aitra_tenant_cost_usd_total, populated once the SiteConfig cost
+# wiring lands (issue #40 follow-up); until then the alert stays inactive.
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
@@ -27,6 +33,7 @@ spec:
             description: >
               {{ $labels.namespace }}/{{ $labels.model }} on {{ $labels.hardware }}:
               J/token is {{ $value | humanize }} — more than 20% above the 1h average.
+            runbook_url: "https://github.com/aitra-ai/aitra-meter/blob/main/docs/runbooks/ai-efficiency-regression.md"
 
         - alert: GPUIdleExcessive
           expr: aitra_idle_time_ratio > 0.40
@@ -38,6 +45,7 @@ spec:
             description: >
               Node {{ $labels.node }} has been idle {{ $value | humanizePercentage }}
               of the last hour. Consider scaling down or consolidating workloads.
+            runbook_url: "https://github.com/aitra-ai/aitra-meter/blob/main/docs/runbooks/gpu-idle.md"
 
         - alert: MeasurementUnstable
           expr: aitra_measurement_cv > 0.03
@@ -50,3 +58,38 @@ spec:
               Node {{ $labels.node }}, model {{ $labels.model_name }}:
               CV is {{ $value | humanizePercentage }}. Check for workload
               interference or GPU thermal throttling.
+            runbook_url: "https://github.com/aitra-ai/aitra-meter/blob/main/docs/runbooks/measurement-unstable.md"
+
+        - alert: TTFTRegression
+          expr: |
+            histogram_quantile(0.95,
+              sum by (le, namespace) (
+                rate(vllm:time_to_first_token_seconds_bucket[5m])
+              )
+            ) > 3.0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "P95 time-to-first-token >3s"
+            description: >
+              Namespace {{ $labels.namespace }}: P95 TTFT is {{ $value | humanize }}s
+              over the last 5m. Sourced directly from vLLM
+              (vllm:time_to_first_token_seconds) — Aitra ships the rule, not the metric.
+            runbook_url: "https://github.com/aitra-ai/aitra-meter/blob/main/docs/runbooks/ttft-regression.md"
+
+        - alert: TenantCostBudgetExceeded
+          expr: |
+            increase(aitra_tenant_cost_usd_total[24h])
+            > on(namespace) group_left()
+            aitra_tenant_cost_budget_usd_24h
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Namespace {{ $labels.namespace }} exceeded its 24h cost budget"
+            description: >
+              {{ $labels.namespace }} spent {{ $value | humanize }} USD on inference
+              energy in the last 24h — over its configured budget. Set budgets via the
+              chart `costBudgets` value (docs/guides/cost-budgets.md).
+            runbook_url: "https://github.com/aitra-ai/aitra-meter/blob/main/docs/runbooks/tenant-budget.md"

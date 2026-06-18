@@ -115,6 +115,16 @@ siteConfig:
   carbonIntensityFallback: 400
   carbonSource: electricitymaps
 
+# Per-namespace 24h inference-energy cost budgets (USD), keyed by namespace name.
+# Each entry renders an aitra_tenant_cost_budget_usd_24h recording rule (see
+# templates/prometheusrule.yaml) that the TenantCostBudgetExceeded alert compares
+# against. Empty = no budget rules rendered. See docs/guides/cost-budgets.md.
+# Example:
+#   costBudgets:
+#     inference-prod: 500
+#     inference-fin: 250
+costBudgets: {}
+
 # External API credentials
 externalApis:
   electricityMaps:
