@@ -34,10 +34,14 @@ import (
 
 func main() {
 	metricsAddr := flag.String("metrics-addr", ":8080", "Prometheus metrics and API listen address")
-	grpcAddr    := flag.String("grpc-addr",    ":9091", "gRPC listen address for measurement agents")
-	clusterName := flag.String("cluster",      "",      "Cluster name (required)")
-	kubeconfig  := flag.String("kubeconfig",   "",      "Path to kubeconfig (empty = in-cluster)")
-	logLevel    := flag.String("log-level",    "info",  "Log level: debug | info | warn | error")
+	grpcAddr := flag.String("grpc-addr", ":9091", "gRPC listen address for measurement agents")
+	clusterName := flag.String("cluster", "", "Cluster name (required)")
+	kubeconfig := flag.String("kubeconfig", "", "Path to kubeconfig (empty = in-cluster)")
+	logLevel := flag.String("log-level", "info", "Log level: debug | info | warn | error")
+	costPerKWh := flag.Float64("electricity-cost-per-kwh", envFloat("ELECTRICITY_COST_PER_KWH", 0), "Electricity cost USD/kWh for cost derivation (0 = off)")
+	gridGCO2 := flag.Float64("grid-gco2-per-kwh", envFloat("GRID_GCO2_PER_KWH", 0), "Grid carbon intensity gCO2/kWh for carbon derivation (0 = off)")
+	carbonSource := flag.String("carbon-source", envStr("CARBON_SOURCE", "manual"), "carbon_source metric label")
+	costSource := flag.String("cost-source", envStr("COST_SOURCE", "manual"), "cost_source metric label")
 	flag.Parse()
 
 	if *clusterName == "" {
@@ -90,6 +94,12 @@ func main() {
 		aggregation.NewCalibrationTableFromMap(nil),
 		k8slookup.NewNodeHardwareLookup(k8sClient),
 		backend,
+		aggregation.SiteParams{
+			ElectricityCostPerKWh: *costPerKWh,
+			GridGCO2PerKWh:        *gridGCO2,
+			CarbonSource:          *carbonSource,
+			CostSource:            *costSource,
+		},
 	)
 
 	// --- gRPC server -------------------------------------------------------
@@ -167,6 +177,24 @@ func newLogger(level string) *zap.Logger {
 	_ = cfg.Level.UnmarshalText([]byte(level))
 	l, _ := cfg.Build()
 	return l
+}
+
+// envStr returns the environment variable value or def when unset/empty.
+func envStr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
+// envFloat parses a float environment variable, returning def when unset or invalid.
+func envFloat(key string, def float64) float64 {
+	if v := os.Getenv(key); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			return f
+		}
+	}
+	return def
 }
 
 func buildK8sClient(kubeconfigPath string) (kubernetes.Interface, error) {

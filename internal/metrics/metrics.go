@@ -29,7 +29,7 @@ var (
 	// CostPerMillionTokensUSD is $/M output tokens (energy cost only).
 	CostPerMillionTokensUSD = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "aitra_cost_per_million_tokens_usd",
-		Help: "USD per million output tokens (energy cost only). Derived: J/token * $/kWh / 3600 * 1e6.",
+		Help: "USD per million output tokens (energy cost only). Derived: J/token / 3.6e6 (kWh) * $/kWh * 1e6.",
 	}, []string{"namespace", "workload", "model", "hardware", "cost_source"})
 
 	// NamespaceEnergyJoulesTotal is cumulative energy per namespace.
