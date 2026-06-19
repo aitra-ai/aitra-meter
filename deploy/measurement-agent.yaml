@@ -1,0 +1,48 @@
+# Measurement agent (DCGM mode) for the 24 cluster.
+# Runs unprivileged: it only scrapes the node-local dcgm-exporter over HTTP.
+# No active inference traffic exists, so it reports idle windows (tokens=0),
+# which the aggregation service turns into idle power / utilization metrics.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aitra-meter-agent
+  namespace: aitra-system
+  labels:
+    app: aitra-meter-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aitra-meter-agent
+  template:
+    metadata:
+      labels:
+        app: aitra-meter-agent
+    spec:
+      serviceAccountName: aitra-meter
+      containers:
+        - name: agent
+          image: aitra-meter/measurement-agent:dev
+          imagePullPolicy: Never
+          args:
+            - --energy-provider=dcgm
+            - --energy-endpoint=http://dcgm-exporter.aitra-system:9400/metrics
+            - --inference-provider=vllm
+            # No vLLM running; point at a 200-OK endpoint so the provider reads
+            # zero tokens cleanly (idle) instead of erroring on a refused conn.
+            - --inference-endpoint=http://dcgm-exporter.aitra-system:9400/metrics
+            - --aggregator=aitra-meter-aggregation:9091
+            - --window-seconds=30
+            - --log-level=info
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
