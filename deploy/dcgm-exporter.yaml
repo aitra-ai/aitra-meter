@@ -35,6 +35,11 @@ metadata:
   labels: { app: dcgm-exporter }
 spec:
   type: ClusterIP
+  # Node-local routing: the agent scrapes the exporter on its OWN node. Without
+  # this, kube-proxy round-robins to every endpoint including the control-plane
+  # pod (no usable GPUs → /metrics hangs >10s), so ~half the agent scrapes time
+  # out. Local routing keeps each agent on its fast node-local exporter.
+  internalTrafficPolicy: Local
   selector: { app: dcgm-exporter }
   ports:
     - { name: metrics, port: 9400, targetPort: metrics }
