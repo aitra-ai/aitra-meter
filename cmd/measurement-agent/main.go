@@ -14,7 +14,9 @@ import (
 	"github.com/aitra-ai/aitra-meter/internal/provider"
 
 	// Import providers to trigger their init() registration.
-	_ "github.com/aitra-ai/aitra-meter/internal/provider/energy/amd"
+	// NOTE: deploy/aitra-meter-24 builds CGO-free (distroless). The amd and nvml
+	// providers require cgo, so they are omitted here; this NVIDIA cluster uses
+	// the pure-Go dcgm provider (scrapes node-local dcgm-exporter).
 	_ "github.com/aitra-ai/aitra-meter/internal/provider/energy/dcgm"
 	_ "github.com/aitra-ai/aitra-meter/internal/provider/energy/zeus"
 	_ "github.com/aitra-ai/aitra-meter/internal/provider/inference/genericprometheus"
@@ -29,6 +31,7 @@ func main() {
 	windowSecs     := flag.Int(   "window-seconds",     30, "Measurement window duration in seconds")
 	logLevel       := flag.String("log-level",          "info", "Log level: debug | info | warn | error")
 	inferenceEndpoint := flag.String("inference-endpoint", "", "Inference provider metrics URL (e.g. http://localhost:8000/metrics)")
+	energyEndpoint := flag.String("energy-endpoint", "", "Energy provider metrics URL (e.g. http://localhost:9400/metrics for dcgm)")
 	flag.Parse()
 
 	log := newLogger(*logLevel)
@@ -50,7 +53,11 @@ func main() {
 		zap.Int("window_seconds", *windowSecs),
 	)
 
-	energyProvider, err := provider.NewEnergy(*energyType, nil)
+	energyConfig := map[string]string{}
+	if *energyEndpoint != "" {
+		energyConfig["endpoint"] = *energyEndpoint
+	}
+	energyProvider, err := provider.NewEnergy(*energyType, energyConfig)
 	if err != nil {
 		log.Fatal("energy provider init failed",
 			zap.String("provider", *energyType),
