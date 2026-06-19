@@ -94,6 +94,10 @@ func (l *Loop) ReportWindow(
 	if !servingWindow {
 		if w.PowerWatts > 0 {
 			metrics.IdlePowerWatts.WithLabelValues(w.Node).Set(w.PowerWatts)
+			// When idle, all GPU power is idle power. Populate the total-power
+			// gauge too so dashboards charting aitra_gpu_power_watts render
+			// idle-only clusters (no serving traffic) instead of an empty graph.
+			metrics.GPUPowerWatts.WithLabelValues(w.Node, "all").Set(w.PowerWatts)
 		}
 		return &measurementv1.WindowAck{Accepted: false}, nil
 	}
