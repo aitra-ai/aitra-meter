@@ -15,13 +15,14 @@ import (
 
 	// Import providers to trigger their init() registration.
 	_ "github.com/aitra-ai/aitra-meter/internal/provider/energy/amd"
+	_ "github.com/aitra-ai/aitra-meter/internal/provider/energy/dcgm"
 	_ "github.com/aitra-ai/aitra-meter/internal/provider/energy/zeus"
 	_ "github.com/aitra-ai/aitra-meter/internal/provider/inference/genericprometheus"
 	_ "github.com/aitra-ai/aitra-meter/internal/provider/inference/vllm"
 )
 
 func main() {
-	energyType := flag.String("energy-provider", "nvml", "Energy provider: nvml | amd")
+	energyType := flag.String("energy-provider", "nvml", "Energy provider: nvml | amd | zeus | dcgm")
 	inferenceType := flag.String("inference-provider", "vllm", "Inference provider: vllm | generic-prometheus")
 	aggregatorAddr := flag.String("aggregator", "aitra-meter-aggregation:9091", "Aggregation service gRPC address")
 	nodeName := flag.String("node", "", "Kubernetes node name (defaults to NODE_NAME env var)")
