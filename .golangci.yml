@@ -1,37 +1,52 @@
+version: "2"
 run:
-  timeout: 5m
   go: "1.22"
-
 linters:
   enable:
-    - errcheck
-    - gosimple
-    - govet
-    - ineffassign
-    - staticcheck
-    - unused
-    - gofmt
-    - goimports
+    - exhaustive
+    - gosec
     - misspell
     - revive
-    - gosec
-    - exhaustive
-
-linters-settings:
-  goimports:
-    local-prefixes: github.com/aitra-ai/aitra-meter
-  revive:
+  settings:
+    gosec:
+      excludes:
+        - G115
+    revive:
+      rules:
+        - name: exported
+          severity: warning
+          # Provider types are deliberately named <Vendor>Provider (NVMLProvider,
+          # ZeusProvider, DCGMProvider, …) for clarity at call sites; keep the
+          # exported-doc check but allow that intentional stutter.
+          arguments:
+            - disableStutteringCheck
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
     rules:
-      - name: exported
-        severity: warning
-  gosec:
-    excludes:
-      - G115  # integer overflow — false positive in provider registry
-
-issues:
-  exclude-rules:
-    # Test files are allowed to use unsafe patterns
-    - path: _test\.go
-      linters:
-        - gosec
-        - errcheck
+      - linters:
+          - errcheck
+          - gosec
+        path: _test\.go
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/aitra-ai/aitra-meter
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

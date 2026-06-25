@@ -68,8 +68,8 @@ func TestCalibrationTierPriorityReversedOrder(t *testing.T) {
 
 func TestCalibrationDifferentHardware(t *testing.T) {
 	table := NewCalibrationTableFromMap(map[CalibrationKey]CalibrationEntry{
-		{Model: "qwen-27b", Hardware: "h100"}:  {Tier: TierReference, RefJPerToken: 0.42},
-		{Model: "qwen-27b", Hardware: "l40s"}:  {Tier: TierReference, RefJPerToken: 0.61},
+		{Model: "qwen-27b", Hardware: "h100"}: {Tier: TierReference, RefJPerToken: 0.42},
+		{Model: "qwen-27b", Hardware: "l40s"}: {Tier: TierReference, RefJPerToken: 0.61},
 	})
 	h100 := table.Lookup("qwen-27b", "h100")
 	l40s := table.Lookup("qwen-27b", "l40s")

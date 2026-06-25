@@ -42,21 +42,29 @@ func (v *VLLMProvider) Name() string { return "vllm" }
 
 func (v *VLLMProvider) OutputTokens(ctx context.Context) (uint64, error) {
 	m, err := v.scrape(ctx)
-	if err != nil { return 0, err }
+	if err != nil {
+		return 0, err
+	}
 	val, ok := m[metricOutputTokens]
-	if !ok { return 0, fmt.Errorf("metric %q not found", metricOutputTokens) }
+	if !ok {
+		return 0, fmt.Errorf("metric %q not found", metricOutputTokens)
+	}
 	return uint64(val), nil
 }
 
 func (v *VLLMProvider) RequestsRunning(ctx context.Context) (int, error) {
 	m, err := v.scrape(ctx)
-	if err != nil { return 0, err }
+	if err != nil {
+		return 0, err
+	}
 	return int(m[metricRequestsRunning]), nil
 }
 
 func (v *VLLMProvider) ModelName(ctx context.Context) (string, error) {
 	lines, err := v.rawLines(ctx)
-	if err != nil { return "", err }
+	if err != nil {
+		return "", err
+	}
 	for _, line := range lines {
 		if strings.HasPrefix(line, metricOutputTokens+"{") {
 			if name := extractLabel(line, metricModelLabel); name != "" {
@@ -69,14 +77,22 @@ func (v *VLLMProvider) ModelName(ctx context.Context) (string, error) {
 
 func (v *VLLMProvider) scrape(ctx context.Context) (map[string]float64, error) {
 	lines, err := v.rawLines(ctx)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	res := map[string]float64{}
 	for _, line := range lines {
-		if line == "" || strings.HasPrefix(line, "#") { continue }
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
 		parts := strings.Fields(line)
-		if len(parts) < 2 { continue }
+		if len(parts) < 2 {
+			continue
+		}
 		name := parts[0]
-		if i := strings.Index(name, "{"); i > 0 { name = name[:i] }
+		if i := strings.Index(name, "{"); i > 0 {
+			name = name[:i]
+		}
 		if val, err := strconv.ParseFloat(parts[len(parts)-1], 64); err == nil {
 			res[name] = val
 		}
@@ -86,21 +102,31 @@ func (v *VLLMProvider) scrape(ctx context.Context) (map[string]float64, error) {
 
 func (v *VLLMProvider) rawLines(ctx context.Context) ([]string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, v.endpoint, nil)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	resp, err := v.client.Do(req)
-	if err != nil { return nil, fmt.Errorf("scraping %s: %w", v.endpoint, err) }
+	if err != nil {
+		return nil, fmt.Errorf("scraping %s: %w", v.endpoint, err)
+	}
 	defer resp.Body.Close() //nolint:errcheck
 	body, err := io.ReadAll(resp.Body)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	return strings.Split(string(body), "\n"), nil
 }
 
 func extractLabel(line, label string) string {
 	key := label + `="`
 	idx := strings.Index(line, key)
-	if idx < 0 { return "" }
+	if idx < 0 {
+		return ""
+	}
 	start := idx + len(key)
 	end := strings.Index(line[start:], `"`)
-	if end < 0 { return "" }
+	if end < 0 {
+		return ""
+	}
 	return line[start : start+end]
 }
