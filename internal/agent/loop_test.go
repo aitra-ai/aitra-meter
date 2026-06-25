@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -26,8 +25,8 @@ type fakeEnergy struct {
 func (f *fakeEnergy) Name() string                                           { return "fake-energy" }
 func (f *fakeEnergy) BeginWindow(_ context.Context, _ string) error          { return f.err }
 func (f *fakeEnergy) EndWindow(_ context.Context, _ string) (float64, error) { return f.joules, f.err }
-func (f *fakeEnergy) IdlePower(_ context.Context) (float64, error)          { return f.joules / 30, f.err }
-func (f *fakeEnergy) Devices(_ context.Context) ([]provider.Device, error)  { return nil, nil }
+func (f *fakeEnergy) IdlePower(_ context.Context) (float64, error)           { return f.joules / 30, f.err }
+func (f *fakeEnergy) Devices(_ context.Context) ([]provider.Device, error)   { return nil, nil }
 
 type fakeInference struct {
 	tokens  uint64
@@ -36,10 +35,10 @@ type fakeInference struct {
 	err     error
 }
 
-func (f *fakeInference) Name() string                                             { return "fake-inference" }
-func (f *fakeInference) OutputTokens(_ context.Context) (uint64, error)          { return f.tokens, f.err }
-func (f *fakeInference) RequestsRunning(_ context.Context) (int, error)          { return f.running, f.err }
-func (f *fakeInference) ModelName(_ context.Context) (string, error)             { return f.model, f.err }
+func (f *fakeInference) Name() string                                   { return "fake-inference" }
+func (f *fakeInference) OutputTokens(_ context.Context) (uint64, error) { return f.tokens, f.err }
+func (f *fakeInference) RequestsRunning(_ context.Context) (int, error) { return f.running, f.err }
+func (f *fakeInference) ModelName(_ context.Context) (string, error)    { return f.model, f.err }
 
 // --- fake aggregation service -----------------------------------------------
 
@@ -144,14 +143,10 @@ func TestLoopTokenDeltaComputed(t *testing.T) {
 	addr, svc, stop := startFakeAggSvc(t)
 	defer stop()
 
-	var callCount atomic.Uint64
 	inf := &fakeInference{model: "m"}
 	// We advance tokens by 200 on each call.
 	energy := &fakeEnergy{joules: 50}
 	loop := newTestLoop(t, addr, energy, inf)
-
-	// Override inference to increment on each OutputTokens call.
-	_ = callCount // suppress unused warning; callCount used below via closure
 
 	// Use a custom inference provider via struct field mutation (same package).
 	loop.cfg.InferenceProvider = &incrementingInference{step: 200, model: "m"}

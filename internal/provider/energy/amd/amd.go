@@ -1,4 +1,4 @@
-//go:build linux && cgo
+//go:build linux && cgo && amd
 
 // Package amd provides an EnergyProvider that reads GPU energy and power
 // directly from the AMD SMI library (libamd_smi.so). This is AMD's

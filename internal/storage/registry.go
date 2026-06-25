@@ -9,8 +9,8 @@ import (
 type BackendFactory func(config map[string]string) (Backend, error)
 
 var (
-	mu        sync.RWMutex
-	backends  = map[string]BackendFactory{}
+	mu       sync.RWMutex
+	backends = map[string]BackendFactory{}
 )
 
 // Register registers a BackendFactory under name.

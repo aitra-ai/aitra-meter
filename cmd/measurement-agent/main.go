@@ -21,12 +21,12 @@ import (
 )
 
 func main() {
-	energyType     := flag.String("energy-provider",    "nvml", "Energy provider: nvml | amd")
-	inferenceType  := flag.String("inference-provider", "vllm", "Inference provider: vllm | generic-prometheus")
-	aggregatorAddr := flag.String("aggregator",         "aitra-meter-aggregation:9091", "Aggregation service gRPC address")
-	nodeName       := flag.String("node",               "", "Kubernetes node name (defaults to NODE_NAME env var)")
-	windowSecs     := flag.Int(   "window-seconds",     30, "Measurement window duration in seconds")
-	logLevel       := flag.String("log-level",          "info", "Log level: debug | info | warn | error")
+	energyType := flag.String("energy-provider", "nvml", "Energy provider: nvml | amd")
+	inferenceType := flag.String("inference-provider", "vllm", "Inference provider: vllm | generic-prometheus")
+	aggregatorAddr := flag.String("aggregator", "aitra-meter-aggregation:9091", "Aggregation service gRPC address")
+	nodeName := flag.String("node", "", "Kubernetes node name (defaults to NODE_NAME env var)")
+	windowSecs := flag.Int("window-seconds", 30, "Measurement window duration in seconds")
+	logLevel := flag.String("log-level", "info", "Log level: debug | info | warn | error")
 	inferenceEndpoint := flag.String("inference-endpoint", "", "Inference provider metrics URL (e.g. http://localhost:8000/metrics)")
 	flag.Parse()
 

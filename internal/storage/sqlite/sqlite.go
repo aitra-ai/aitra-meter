@@ -174,9 +174,7 @@ func (b *Backend) QueryChargeback(ctx context.Context, q storage.ChargebackQuery
 			return nil, fmt.Errorf("sqlite chargeback scan: %w", err)
 		}
 		c.EnergyJoulesPUE = c.EnergyJoulesRaw * q.PUE
-		if c.OutputTokens > 0 {
-			// CostUSD derived client-side from electricity cost configured in SiteConfig
-		}
+		// CostUSD is derived client-side from the electricity cost configured in SiteConfig.
 		result = append(result, c)
 	}
 	return result, rows.Err()

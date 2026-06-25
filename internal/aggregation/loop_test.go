@@ -131,16 +131,16 @@ func TestLoopZeroTokensRejected(t *testing.T) {
 
 func TestLoopAttributionMethod(t *testing.T) {
 	tests := []struct {
-		name    string
-		ns      string
-		policy  PolicyConfig
-		wantM   AttributionMethod
+		name   string
+		ns     string
+		policy PolicyConfig
+		wantM  AttributionMethod
 	}{
 		{
-			name:  "direct",
-			ns:    "prod",
+			name:   "direct",
+			ns:     "prod",
 			policy: PolicyConfig{DefaultMethod: AttributionDirect},
-			wantM: AttributionDirect,
+			wantM:  AttributionDirect,
 		},
 		{
 			name: "proportional override",
