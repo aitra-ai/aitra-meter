@@ -230,6 +230,79 @@ Metrics are exposed at:
 
 ---
 
+## Model efficiency primitives (#40)
+
+### `aitra_model_tokens_total`
+
+**Type:** Counter  
+**Source:** Aggregation service  
+**Description:** Cumulative output tokens generated, by model series. Model-scoped complement to `aitra_namespace_tokens_total`.
+
+| Label | Description |
+|---|---|
+| `namespace` | Kubernetes namespace |
+| `model` | Model name |
+| `hardware` | GPU tier |
+| `workload` | Workload type |
+
+---
+
+### `aitra_model_energy_per_1m_tokens`
+
+**Type:** Gauge  
+**Source:** Aggregation service  
+**Description:** Joules per one million output tokens (`J/token × 1e6`) for the current window.
+
+| Label | Description |
+|---|---|
+| `namespace` | Kubernetes namespace |
+| `model` | Model name |
+| `hardware` | GPU tier |
+| `workload` | Workload type |
+
+---
+
+### `aitra_model_cost_per_1m_tokens_usd`
+
+**Type:** Gauge  
+**Source:** Aggregation service  
+**Description:** USD per million output tokens (energy cost), by model series. Same derivation as `aitra_cost_per_million_tokens_usd`.
+
+| Label | Description |
+|---|---|
+| `namespace` | Kubernetes namespace |
+| `model` | Model name |
+| `hardware` | GPU tier |
+| `workload` | Workload type |
+
+---
+
+### `aitra_tenant_cost_usd_total`
+
+**Type:** Counter  
+**Source:** Aggregation service  
+**Description:** Cumulative energy cost in USD attributed to a tenant, summed per measurement window.
+
+| Label | Description |
+|---|---|
+| `namespace` | Kubernetes namespace |
+| `team` | Team from pod annotation |
+| `cost_center` | Cost centre from pod annotation |
+
+---
+
+### `aitra_gpu_serving_utilization_ratio`
+
+**Type:** Gauge  
+**Source:** Aggregation service  
+**Description:** Fraction of elapsed time a node was executing inference requests: `(window − idle) / window`. Distinct from DCGM SM utilization.
+
+| Label | Description |
+|---|---|
+| `node` | Kubernetes node name |
+
+---
+
 ## Example PromQL queries
 
 **Efficiency delta vs calibration baseline:**

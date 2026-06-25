@@ -29,7 +29,7 @@ var (
 	// CostPerMillionTokensUSD is $/M output tokens (energy cost only).
 	CostPerMillionTokensUSD = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "aitra_cost_per_million_tokens_usd",
-		Help: "USD per million output tokens (energy cost only). Derived: J/token * $/kWh / 3600 * 1e6.",
+		Help: "USD per million output tokens (energy cost only). Derived: J/token / 3.6e6 (kWh) * $/kWh * 1e6.",
 	}, []string{"namespace", "workload", "model", "hardware", "cost_source"})
 
 	// NamespaceEnergyJoulesTotal is cumulative energy per namespace.
@@ -109,4 +109,45 @@ var (
 		Name: "aitra_gpu_utilization_efficiency",
 		Help: "Output tokens per second per GPU watt. Bridges GPU utilisation and token throughput.",
 	}, []string{"namespace", "workload", "model", "hardware"})
+
+	// --- Model-level efficiency primitives (issue #40) -----------------------
+	// The token + energy metrics are populated by the aggregation loop. The cost
+	// (model_cost, tenant_cost) and serving-ratio metrics are declared here to
+	// establish the family; they are populated by the SiteConfig-cost and
+	// idle-tracking follow-up (same dependency as aitra_cost_per_million_tokens_usd
+	// and aitra_idle_time_ratio).
+
+	// ModelTokensTotal is cumulative output tokens by model series.
+	ModelTokensTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "aitra_model_tokens_total",
+		Help: "Cumulative output tokens generated, by model series.",
+	}, []string{"namespace", "model", "hardware", "workload"})
+
+	// ModelEnergyPer1MTokens is energy per one million output tokens (J/1M tokens).
+	ModelEnergyPer1MTokens = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "aitra_model_energy_per_1m_tokens",
+		Help: "Joules per one million output tokens (J/token x 1e6) for the current window.",
+	}, []string{"namespace", "model", "hardware", "workload"})
+
+	// ModelCostPer1MTokensUSD is per-model USD per million output tokens (energy
+	// cost). Populated by the SiteConfig-cost follow-up to #40.
+	ModelCostPer1MTokensUSD = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "aitra_model_cost_per_1m_tokens_usd",
+		Help: "USD per million output tokens (energy cost) by model series; same derivation as aitra_cost_per_million_tokens_usd.",
+	}, []string{"namespace", "model", "hardware", "workload"})
+
+	// TenantCostUSDTotal is cumulative energy cost (USD) attributed to a tenant.
+	// Populated by the SiteConfig-cost follow-up to #40.
+	TenantCostUSDTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "aitra_tenant_cost_usd_total",
+		Help: "Cumulative energy cost in USD attributed to a tenant, summed per measurement window.",
+	}, []string{"namespace", "team", "cost_center"})
+
+	// GPUServingUtilizationRatio is the fraction of elapsed time a node was
+	// serving inference requests: (window - idle) / window. Distinct from DCGM SM
+	// utilization. Populated by the idle-tracking follow-up to #40.
+	GPUServingUtilizationRatio = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "aitra_gpu_serving_utilization_ratio",
+		Help: "Fraction of elapsed time the node was serving inference requests (0.0-1.0).",
+	}, []string{"node"})
 )
