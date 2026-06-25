@@ -3,10 +3,11 @@
 // DaemonSet pod and communicates over a Unix domain socket.
 //
 // The sidecar exposes a minimal JSON-RPC interface over the socket:
-//   {"method":"begin_window","id":"<windowID>"}
-//   {"method":"end_window","id":"<windowID>"}  -> {"joules": <float>}
-//   {"method":"idle_power"}                    -> {"watts": <float>}
-//   {"method":"devices"}                       -> {"devices": [...]}
+//
+//	{"method":"begin_window","id":"<windowID>"}
+//	{"method":"end_window","id":"<windowID>"}  -> {"joules": <float>}
+//	{"method":"idle_power"}                    -> {"watts": <float>}
+//	{"method":"devices"}                       -> {"devices": [...]}
 //
 // The socket path defaults to /tmp/zeus.sock and is shared between the
 // measurement-agent container and the zeus-sidecar container via an emptyDir
@@ -24,9 +25,9 @@ import (
 )
 
 const (
-	defaultSocketPath    = "/tmp/zeus.sock"
-	defaultDialTimeout   = 5 * time.Second
-	defaultRPCTimeout    = 10 * time.Second
+	defaultSocketPath  = "/tmp/zeus.sock"
+	defaultDialTimeout = 5 * time.Second
+	defaultRPCTimeout  = 10 * time.Second
 )
 
 func init() {

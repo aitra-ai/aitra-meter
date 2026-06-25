@@ -21,22 +21,18 @@ func newTestProvider(t *testing.T, body string) (*GenericPrometheusProvider, *ht
 		w.Write([]byte(body)) //nolint:errcheck
 	}))
 	t.Cleanup(srv.Close)
-	p, err := (&struct{}{}).init(srv.URL)
-	if err != nil {
-		t.Fatalf("init: %v", err)
-	}
-	return p, srv
+	return newTGIProvider(srv.URL), srv
 }
 
-// init is a test helper that creates a provider with TGI metric names.
-func (*struct{}) init(endpoint string) (*GenericPrometheusProvider, error) {
+// newTGIProvider builds a provider wired to TGI metric names against endpoint.
+func newTGIProvider(endpoint string) *GenericPrometheusProvider {
 	return &GenericPrometheusProvider{
 		endpoint:              endpoint + "/metrics",
 		outputTokensMetric:    "tgi_request_generated_tokens_total",
 		requestsRunningMetric: "tgi_queue_size",
 		modelNameLabel:        "model_id",
 		client:                http.DefaultClient,
-	}, nil
+	}
 }
 
 func TestOutputTokens(t *testing.T) {

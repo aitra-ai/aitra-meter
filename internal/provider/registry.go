@@ -6,8 +6,8 @@ import (
 )
 
 var (
-	mu               sync.RWMutex
-	energyProviders  = map[string]EnergyProviderFactory{}
+	mu                 sync.RWMutex
+	energyProviders    = map[string]EnergyProviderFactory{}
 	inferenceProviders = map[string]InferenceProviderFactory{}
 )
 
@@ -58,7 +58,9 @@ func energyProviderNames() []string {
 	mu.RLock()
 	defer mu.RUnlock()
 	names := make([]string, 0, len(energyProviders))
-	for n := range energyProviders { names = append(names, n) }
+	for n := range energyProviders {
+		names = append(names, n)
+	}
 	return names
 }
 
@@ -66,6 +68,8 @@ func inferenceProviderNames() []string {
 	mu.RLock()
 	defer mu.RUnlock()
 	names := make([]string, 0, len(inferenceProviders))
-	for n := range inferenceProviders { names = append(names, n) }
+	for n := range inferenceProviders {
+		names = append(names, n)
+	}
 	return names
 }

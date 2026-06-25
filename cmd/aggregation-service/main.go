@@ -34,10 +34,10 @@ import (
 
 func main() {
 	metricsAddr := flag.String("metrics-addr", ":8080", "Prometheus metrics and API listen address")
-	grpcAddr    := flag.String("grpc-addr",    ":9091", "gRPC listen address for measurement agents")
-	clusterName := flag.String("cluster",      "",      "Cluster name (required)")
-	kubeconfig  := flag.String("kubeconfig",   "",      "Path to kubeconfig (empty = in-cluster)")
-	logLevel    := flag.String("log-level",    "info",  "Log level: debug | info | warn | error")
+	grpcAddr := flag.String("grpc-addr", ":9091", "gRPC listen address for measurement agents")
+	clusterName := flag.String("cluster", "", "Cluster name (required)")
+	kubeconfig := flag.String("kubeconfig", "", "Path to kubeconfig (empty = in-cluster)")
+	logLevel := flag.String("log-level", "info", "Log level: debug | info | warn | error")
 	flag.Parse()
 
 	if *clusterName == "" {
@@ -148,7 +148,7 @@ func main() {
 		_ = json.NewEncoder(w).Encode(map[string]any{"namespaces": charges})
 	})
 
-	httpSrv := &http.Server{Addr: *metricsAddr, Handler: mux}
+	httpSrv := &http.Server{Addr: *metricsAddr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		log.Info("metrics server listening", zap.String("addr", *metricsAddr))
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
