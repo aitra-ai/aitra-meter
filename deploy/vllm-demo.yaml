@@ -1,7 +1,11 @@
 # Minimal vLLM to generate real inference traffic on ONE A100, so the dashboard's
 # J/token, cost, carbon and chargeback views light up with measured data.
-# Reuses the vllm/vllm-openai image already cached on xspark (imagePullPolicy:Never).
-# Small model pulled via the hf-mirror.com mirror (China network). aitra-system only.
+# Reuses the vllm/vllm-openai:v0.10.2 image already cached on xspark (Never).
+#
+# The pod network can't reliably reach HF from inside transformers (it crashes on
+# the first transient failure), but plain curl to hf-mirror works. So an
+# initContainer curl-downloads the small model (with retries) into a host-path
+# dir, and vLLM loads it OFFLINE from disk. aitra-system only.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -19,15 +23,37 @@ spec:
       labels:
         app: vllm-demo
     spec:
+      initContainers:
+        - name: fetch-model
+          image: curlimages/curl:8.11.1
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              D=/models/qwen
+              mkdir -p "$D"
+              BASE=https://hf-mirror.com/Qwen/Qwen2.5-0.5B-Instruct/resolve/main
+              for f in config.json generation_config.json merges.txt tokenizer.json tokenizer_config.json vocab.json model.safetensors; do
+                if [ -s "$D/$f" ]; then echo "have $f"; continue; fi
+                echo "downloading $f ..."
+                n=0
+                until curl -fSL --max-time 600 -o "$D/$f.part" "$BASE/$f"; do
+                  n=$((n+1)); [ "$n" -ge 15 ] && echo "FAILED $f after 15 tries" && exit 1
+                  echo "retry $f ($n)"; sleep 3
+                done
+                mv "$D/$f.part" "$D/$f"
+              done
+              echo "model ready:"; ls -la "$D"
+          volumeMounts:
+            - name: model
+              mountPath: /models
       containers:
         - name: vllm
-          # v0.10.2 is cached on xspark and supports the classic flags; the
-          # `latest` image is a newer vLLM that dropped --disable-log-requests.
           image: vllm/vllm-openai:v0.10.2
           imagePullPolicy: Never
           args:
             - --model
-            - Qwen/Qwen2.5-0.5B-Instruct
+            - /models/qwen
             - --served-model-name
             - qwen2.5-0.5b
             - --gpu-memory-utilization
@@ -35,15 +61,10 @@ spec:
             - --max-model-len
             - "4096"
           env:
-            - name: HF_ENDPOINT
-              value: "https://hf-mirror.com"
-            # hf-mirror can be slow/flaky on first byte; be patient + resilient.
-            - name: HF_HUB_ETAG_TIMEOUT
-              value: "30"
-            - name: HF_HUB_DOWNLOAD_TIMEOUT
-              value: "120"
-            - name: HF_HUB_ENABLE_HF_TRANSFER
-              value: "0"
+            - name: HF_HUB_OFFLINE
+              value: "1"
+            - name: TRANSFORMERS_OFFLINE
+              value: "1"
           ports:
             - name: http
               containerPort: 8000
@@ -56,22 +77,21 @@ spec:
               port: 8000
             initialDelaySeconds: 20
             periodSeconds: 10
-            failureThreshold: 90   # up to ~15min for image start + model download
+            failureThreshold: 60
           volumeMounts:
             - name: shm
               mountPath: /dev/shm
-            - name: hf-cache
-              mountPath: /root/.cache/huggingface
+            - name: model
+              mountPath: /models
       volumes:
         - name: shm
           emptyDir:
             medium: Memory
             sizeLimit: 2Gi
-        - name: hf-cache
-          # Persistent on the GPU node so the model survives pod restarts and a
-          # flaky download resumes instead of starting over.
+        - name: model
+          # Persistent on the GPU node so the model survives pod restarts.
           hostPath:
-            path: /root/aitra-hf-cache
+            path: /root/aitra-qwen-model
             type: DirectoryOrCreate
 ---
 apiVersion: v1
