@@ -21,7 +21,9 @@ spec:
     spec:
       containers:
         - name: vllm
-          image: vllm/vllm-openai:latest
+          # v0.10.2 is cached on xspark and supports the classic flags; the
+          # `latest` image is a newer vLLM that dropped --disable-log-requests.
+          image: vllm/vllm-openai:v0.10.2
           imagePullPolicy: Never
           args:
             - --model
@@ -32,7 +34,6 @@ spec:
             - "0.20"
             - --max-model-len
             - "4096"
-            - --disable-log-requests
           env:
             - name: HF_ENDPOINT
               value: "https://hf-mirror.com"
