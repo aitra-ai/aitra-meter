@@ -37,6 +37,13 @@ spec:
           env:
             - name: HF_ENDPOINT
               value: "https://hf-mirror.com"
+            # hf-mirror can be slow/flaky on first byte; be patient + resilient.
+            - name: HF_HUB_ETAG_TIMEOUT
+              value: "30"
+            - name: HF_HUB_DOWNLOAD_TIMEOUT
+              value: "120"
+            - name: HF_HUB_ENABLE_HF_TRANSFER
+              value: "0"
           ports:
             - name: http
               containerPort: 8000
@@ -61,7 +68,11 @@ spec:
             medium: Memory
             sizeLimit: 2Gi
         - name: hf-cache
-          emptyDir: {}
+          # Persistent on the GPU node so the model survives pod restarts and a
+          # flaky download resumes instead of starting over.
+          hostPath:
+            path: /root/aitra-hf-cache
+            type: DirectoryOrCreate
 ---
 apiVersion: v1
 kind: Service
