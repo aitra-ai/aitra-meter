@@ -26,6 +26,8 @@ spec:
       initContainers:
         - name: fetch-model
           image: curlimages/curl:8.11.1
+          securityContext:
+            runAsUser: 0   # write to the root-owned host-path model dir
           command: ["/bin/sh", "-c"]
           args:
             - |
