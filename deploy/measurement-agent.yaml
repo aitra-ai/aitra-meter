@@ -28,9 +28,9 @@ spec:
             - --energy-provider=dcgm
             - --energy-endpoint=http://dcgm-exporter.aitra-system:9400/metrics
             - --inference-provider=vllm
-            # No vLLM running; point at a 200-OK endpoint so the provider reads
-            # zero tokens cleanly (idle) instead of erroring on a refused conn.
-            - --inference-endpoint=http://dcgm-exporter.aitra-system:9400/metrics
+            # Reads vllm:generation_tokens_total / num_requests_running from the
+            # demo vLLM. Before vLLM is ready the read fails cleanly → idle window.
+            - --inference-endpoint=http://vllm-demo.aitra-system:8000/metrics
             - --aggregator=aitra-meter-aggregation:9091
             - --window-seconds=30
             - --log-level=info

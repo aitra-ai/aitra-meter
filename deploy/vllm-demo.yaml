@@ -1,0 +1,78 @@
+# Minimal vLLM to generate real inference traffic on ONE A100, so the dashboard's
+# J/token, cost, carbon and chargeback views light up with measured data.
+# Reuses the vllm/vllm-openai image already cached on xspark (imagePullPolicy:Never).
+# Small model pulled via the hf-mirror.com mirror (China network). aitra-system only.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-demo
+  namespace: aitra-system
+  labels:
+    app: vllm-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-demo
+  template:
+    metadata:
+      labels:
+        app: vllm-demo
+    spec:
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:latest
+          imagePullPolicy: Never
+          args:
+            - --model
+            - Qwen/Qwen2.5-0.5B-Instruct
+            - --served-model-name
+            - qwen2.5-0.5b
+            - --gpu-memory-utilization
+            - "0.20"
+            - --max-model-len
+            - "4096"
+            - --disable-log-requests
+          env:
+            - name: HF_ENDPOINT
+              value: "https://hf-mirror.com"
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 90   # up to ~15min for image start + model download
+          volumeMounts:
+            - name: shm
+              mountPath: /dev/shm
+            - name: hf-cache
+              mountPath: /root/.cache/huggingface
+      volumes:
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 2Gi
+        - name: hf-cache
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-demo
+  namespace: aitra-system
+  labels:
+    app: vllm-demo
+spec:
+  selector:
+    app: vllm-demo
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
