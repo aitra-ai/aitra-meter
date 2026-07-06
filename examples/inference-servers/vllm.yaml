@@ -1,0 +1,9 @@
+# Aitra Meter values for a vLLM inference server.
+# vLLM exposes Prometheus metrics on its serving port by default — no
+# server-side flags required.
+measurementAgent:
+  inferenceProvider:
+    type: vllm
+    config:
+      # vLLM serving port; /metrics is on the same port.
+      endpoint: "http://localhost:8000/metrics"

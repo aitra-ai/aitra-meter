@@ -1,0 +1,20 @@
+# Aitra Meter values for Ollama.
+#
+# Ollama does not expose a Prometheus /metrics endpoint, so there is no
+# dedicated Ollama provider (a native adapter is deferred to a community
+# contribution). To measure Ollama you need a sidecar exporter that
+# translates Ollama's API into Prometheus metrics, then point
+# generic-prometheus at the exporter.
+#
+# The metric names below are PLACEHOLDERS — replace them with whatever your
+# exporter actually emits. Aitra Meter does not ship or endorse a specific
+# Ollama exporter.
+measurementAgent:
+  inferenceProvider:
+    type: generic-prometheus
+    config:
+      # Your exporter's endpoint, not Ollama's API port.
+      endpoint: "http://localhost:9877/metrics"
+      output_tokens_metric: "ollama_completion_tokens_total"
+      requests_running_metric: "ollama_requests_active"
+      model_name_label: "model"

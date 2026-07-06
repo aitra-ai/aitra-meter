@@ -17,6 +17,11 @@ const (
 	metricOutputTokens    = "vllm:generation_tokens_total"
 	metricRequestsRunning = "vllm:num_requests_running"
 	metricModelLabel      = "model_name"
+
+	// Optional latency histograms (issue #41). Read-only correlation
+	// targets — Aitra does not re-expose them.
+	metricTTFT = "vllm:time_to_first_token_seconds"
+	metricTPOT = "vllm:time_per_output_token_seconds"
 )
 
 func init() {
@@ -73,6 +78,28 @@ func (v *VLLMProvider) ModelName(ctx context.Context) (string, error) {
 		}
 	}
 	return "unknown", nil
+}
+
+// Latency reads vLLM's time-to-first-token and time-per-output-token
+// histogram totals (_count and _sum series). ok is false when the histograms
+// are absent from the payload — absence is not an error, since older vLLM
+// versions do not expose them.
+func (v *VLLMProvider) Latency(ctx context.Context) (provider.LatencySample, bool, error) {
+	m, err := v.scrape(ctx)
+	if err != nil {
+		return provider.LatencySample{}, false, err
+	}
+	ttftCount, okTTFT := m[metricTTFT+"_count"]
+	tpotCount, okTPOT := m[metricTPOT+"_count"]
+	if !okTTFT && !okTPOT {
+		return provider.LatencySample{}, false, nil
+	}
+	return provider.LatencySample{
+		TTFTCount: ttftCount,
+		TTFTSum:   m[metricTTFT+"_sum"],
+		TPOTCount: tpotCount,
+		TPOTSum:   m[metricTPOT+"_sum"],
+	}, true, nil
 }
 
 func (v *VLLMProvider) scrape(ctx context.Context) (map[string]float64, error) {

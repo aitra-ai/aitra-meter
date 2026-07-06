@@ -1,0 +1,20 @@
+# Aitra Meter values for NVIDIA Triton Inference Server.
+#
+# KNOWN LIMITATION: Triton does not expose a direct output-token counter for
+# LLM backends. The provider approximates tokens as
+#
+#   nv_inference_request_success × avg_output_tokens_per_request
+#
+# avg_output_tokens_per_request defaults to 1 (i.e. the count is requests,
+# not tokens). Set it from your workload's measured average output length,
+# and treat Triton-derived J/token as an estimate — accuracy is lower than
+# vLLM/SGLang. See docs/guides/inference-providers.md.
+measurementAgent:
+  inferenceProvider:
+    type: triton
+    config:
+      # Triton metrics port (default 8002).
+      endpoint: "http://localhost:8002/metrics"
+      # Average output tokens per request for YOUR workload — measure it,
+      # do not guess. Config values are strings.
+      avg_output_tokens_per_request: "250"

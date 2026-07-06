@@ -1,0 +1,27 @@
+# Aitra Meter values for engine auto-discovery.
+#
+# The agent detects the inference engine from pods on its own node:
+#   1. aitra-ai.github.io/inference-provider annotation (vllm|sglang|triton|tgi)
+#   2. app label matching a known engine name
+# and builds the metrics endpoint from the pod IP and the engine's default
+# metrics port. Detection results are logged at startup.
+#
+# Annotate your inference pod template, e.g.:
+#
+#   template:
+#     metadata:
+#       annotations:
+#         aitra-ai.github.io/inference-provider: sglang
+#
+# See docs/guides/inference-providers.md for the full discovery rules.
+measurementAgent:
+  inferenceProvider:
+    type: auto
+    config:
+      # Clear the chart's default static endpoint (Helm merges maps, so
+      # `config: {}` would keep it). The chart also skips the endpoint key
+      # whenever type is auto — this null is belt-and-braces for values-file
+      # layering. In auto mode the endpoint always comes from the discovered
+      # pod IP; other config keys (e.g. avg_output_tokens_per_request when a
+      # Triton pod is detected) still apply.
+      endpoint: null

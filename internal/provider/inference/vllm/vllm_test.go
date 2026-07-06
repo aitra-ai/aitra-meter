@@ -147,6 +147,80 @@ func TestModelName(t *testing.T) {
 	}
 }
 
+func TestLatency(t *testing.T) {
+	const latencyMetrics = sampleMetrics + `# HELP vllm:time_to_first_token_seconds Histogram of time to first token.
+# TYPE vllm:time_to_first_token_seconds histogram
+vllm:time_to_first_token_seconds_bucket{le="0.1",model_name="Qwen3-27B"} 40
+vllm:time_to_first_token_seconds_count{model_name="Qwen3-27B"} 120
+vllm:time_to_first_token_seconds_sum{model_name="Qwen3-27B"} 18.5
+# TYPE vllm:time_per_output_token_seconds histogram
+vllm:time_per_output_token_seconds_count{model_name="Qwen3-27B"} 12000
+vllm:time_per_output_token_seconds_sum{model_name="Qwen3-27B"} 96.4
+`
+	tests := []struct {
+		name   string
+		body   string
+		wantOK bool
+		want   struct{ ttftC, ttftS, tpotC, tpotS float64 }
+	}{
+		{
+			name:   "reads both histograms",
+			body:   latencyMetrics,
+			wantOK: true,
+			want:   struct{ ttftC, ttftS, tpotC, tpotS float64 }{120, 18.5, 12000, 96.4},
+		},
+		{
+			name:   "TTFT only",
+			body:   "vllm:time_to_first_token_seconds_count 7\nvllm:time_to_first_token_seconds_sum 1.4\n",
+			wantOK: true,
+			want:   struct{ ttftC, ttftS, tpotC, tpotS float64 }{7, 1.4, 0, 0},
+		},
+		{
+			// older vLLM without the histograms: not an error, just absent
+			name:   "histograms absent returns ok=false",
+			body:   sampleMetrics,
+			wantOK: false,
+		},
+		{
+			name:   "empty body returns ok=false",
+			body:   "",
+			wantOK: false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ts, p := serve(tc.body)
+			defer ts.Close()
+			sample, ok, err := p.Latency(context.Background())
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if ok != tc.wantOK {
+				t.Fatalf("ok = %v, want %v", ok, tc.wantOK)
+			}
+			if !ok {
+				return
+			}
+			if sample.TTFTCount != tc.want.ttftC || sample.TTFTSum != tc.want.ttftS ||
+				sample.TPOTCount != tc.want.tpotC || sample.TPOTSum != tc.want.tpotS {
+				t.Errorf("sample = %+v, want %+v", sample, tc.want)
+			}
+		})
+	}
+}
+
+func TestLatencyUnreachable(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	addr := ts.URL
+	ts.Close()
+
+	p := &VLLMProvider{endpoint: addr, client: &http.Client{}}
+	_, _, err := p.Latency(context.Background())
+	if err == nil {
+		t.Fatal("expected connection error, got nil")
+	}
+}
+
 func TestScrapeHTTPError(t *testing.T) {
 	// 500 with empty body: no metrics parsed → OutputTokens returns "not found" error
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

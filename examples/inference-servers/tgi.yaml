@@ -1,0 +1,13 @@
+# Aitra Meter values for HuggingFace Text Generation Inference (TGI).
+#
+# DEPRECATION NOTICE: TGI entered maintenance mode on December 11, 2025.
+# Existing TGI deployments keep working via the generic-prometheus provider
+# below. New deployments should use vLLM or SGLang.
+measurementAgent:
+  inferenceProvider:
+    type: generic-prometheus
+    config:
+      endpoint: "http://localhost:3000/metrics"
+      output_tokens_metric: "tgi_request_generated_tokens_total"
+      requests_running_metric: "tgi_queue_size"
+      model_name_label: "model_id"
