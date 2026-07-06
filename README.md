@@ -103,6 +103,17 @@ Full metrics reference: [docs/reference/metrics.md](docs/reference/metrics.md)
 | 4. Idle consumption | How much energy is consumed while producing no tokens? |
 | 5. Carbon and cost | What is the carbon and energy cost per token? |
 
+## Grafana dashboards
+
+Four dashboard JSON files ship in `helm/aitra-meter/files/`. Set `grafana.enabled=true` to auto-provision them via the Grafana sidecar (no manual import); they also import manually.
+
+| Dashboard | uid | Audience |
+|---|---|---|
+| Aitra Meter (overview) | `aitra-meter-v1` | Everyone — J/token, tokens/J, idle ratio, measurement CV, $/M tokens |
+| Cost Attribution | `aitra-cost-attribution` | FinOps — cost by model, namespace/tenant, cluster; chargeback table |
+| AI Efficiency | `aitra-efficiency` | Infrastructure — tokens/s per watt, serving utilisation, J/token, TTFT/TPOT P95 (vLLM passthrough) |
+| Hardware Efficiency Comparison | `aitra-hardware-efficiency` | Capacity planning — J/token and $/M tokens across GPU types; needs ≥2 `hardware` label values |
+
 ## CNCF integrations
 
 | Project | Integration |
