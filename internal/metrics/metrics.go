@@ -9,10 +9,14 @@ import (
 
 var (
 	// JPerToken is the primary Aitra Meter metric.
+	// The role label is the llm-d serving phase ("prefill" | "decode") for
+	// disaggregated deployments. It is empty — and therefore absent after
+	// Prometheus ingestion — for conventional serving, so it adds no
+	// cardinality outside llm-d clusters.
 	JPerToken = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "aitra_j_per_token",
 		Help: "Joules per output token for the current measurement window.",
-	}, []string{"namespace", "workload", "model", "hardware", "precision", "calibration_tier", "attribution_method"})
+	}, []string{"namespace", "workload", "model", "hardware", "precision", "calibration_tier", "attribution_method", "role"})
 
 	// ClusterJPerToken is the cluster-wide aggregate J/token.
 	ClusterJPerToken = promauto.NewGaugeVec(prometheus.GaugeOpts{

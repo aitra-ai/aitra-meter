@@ -1,0 +1,60 @@
+{
+  "title": "llm-d + Aitra Meter — Prefill vs decode",
+  "description": "Per-phase energy (Aitra Meter) next to per-phase latency (vLLM/llm-d) for disaggregated serving. The role label comes from the llm-d.ai/role pod label. Note: prefill instances report few output tokens, so prefill J/token reads as joules of prefill per request rather than a per-generated-token cost — compare each role against itself over time, not against the other.",
+  "tags": ["aitra-meter", "llm-d", "energy", "inference"],
+  "panels": [
+    {
+      "title": "J/token by serving phase (Aitra Meter)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "avg by (model, role) (aitra_j_per_token{role=~\"prefill|decode\"})",
+          "legendFormat": "{{model}} — {{role}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "joule" } },
+      "description": "Source: Aitra Meter. Separate series per llm-d.ai/role. Decode J/token is comparable to conventional serving; prefill instances report few output tokens, so prefill J/token is closer to joules of prefill per request — read it as a per-phase trend."
+    },
+    {
+      "title": "Time per output token (vLLM, scraped by llm-d monitoring)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.9, sum by (le, model_name) (rate(vllm:time_per_output_token_seconds_bucket[5m])))",
+          "legendFormat": "{{model_name}} — p90 TPOT"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "description": "Source: vLLM /metrics (already scraped by llm-d's monitoring stack). Pair with the energy panel: latency is what the serving stack delivers, J/token is what the infrastructure spends."
+    },
+    {
+      "title": "Decode-pool efficiency trend",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "expr": "avg by (model) (aitra_j_per_token{role=\"decode\"})",
+          "legendFormat": "{{model}} — decode J/token"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "joule" } },
+      "description": "Lower is better. Falling decode J/token as KV-cache hit rate improves is the signal disaggregated serving makes measurable."
+    },
+    {
+      "title": "Prefill-node serving utilization",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "expr": "aitra_gpu_serving_utilization_ratio",
+          "legendFormat": "{{node}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } },
+      "description": "If the prefill J/token series is missing, check here: windows with zero reported output tokens count as idle and are not aggregated."
+    }
+  ],
+  "schemaVersion": 38
+}

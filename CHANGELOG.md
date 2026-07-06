@@ -15,6 +15,7 @@ Pre-release tags: `-alpha` tags are internal milestones. `-beta` tags are public
 - **DCGM energy provider** — pure-Go `EnergyProvider` that scrapes a node-local dcgm-exporter Prometheus endpoint; selectable via `-energy-provider dcgm` / `energyProvider.type: dcgm`. (#59)
 - **Model-level AI efficiency metric family** — `aitra_model_tokens_total` and `aitra_model_energy_per_1m_tokens`, plus SiteConfig-driven cost/carbon derivation (`aitra_cost_per_million_tokens_usd`, `aitra_co2_per_token_grams`, `aitra_tenant_cost_usd_total`) and per-node serving/idle ratios (`aitra_gpu_serving_utilization_ratio`, `aitra_idle_time_ratio`). (#60)
 - **Cost-budget and TTFT alerts** — `TenantCostBudgetExceeded` and `TTFTRegression` reference alerts, a runbook per alert, and a Helm-driven per-namespace budget mechanism (`costBudgets`). (#61)
+- **llm-d per-phase attribution** — new `role` label on `aitra_j_per_token` (empty when unset), populated from the `llm-d.ai/role` pod label to split prefill/decode J/token; `llm-d.ai/model` is now honoured as a model match hint; llm-d integration guide and Grafana prefill-vs-decode example dashboard. (#49)
 
 ### Fixed
 - Repository builds again under `-mod=readonly` (CI default): completed `go.sum` and pruned an unused `testcontainers-go`/Docker dependency tree via `go mod tidy`.

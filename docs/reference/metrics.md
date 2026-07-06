@@ -94,6 +94,7 @@ Metrics are exposed at:
 | `precision` | Precision from pod annotation: `fp16`, `fp8`, `bf16`, `unknown` |
 | `calibration_tier` | `aitra_benchmark`, `reference`, `self_calibrated`, `uncalibrated` |
 | `attribution_method` | `direct` or `proportional` |
+| `role` | llm-d serving phase from the `llm-d.ai/role` pod label: `prefill` or `decode`. Empty (label absent) for conventional serving — the dimension adds no cardinality outside llm-d disaggregated deployments. See the [llm-d integration guide](../guides/llm-d-integration.md). |
 
 ---
 
@@ -325,4 +326,9 @@ increase(aitra_namespace_tokens_total[30d])
 **Nodes with high idle ratio:**
 ```promql
 aitra_idle_time_ratio > 0.5
+```
+
+**Prefill vs decode J/token (llm-d disaggregated serving):**
+```promql
+avg by (model, role) (aitra_j_per_token{role=~"prefill|decode"})
 ```

@@ -151,6 +151,138 @@ func TestPodMetaLookupMissingAnnotationsFallback(t *testing.T) {
 	}
 }
 
+// --- llm-d labels (issue #49) -------------------------------------------------
+
+func TestPodMetaLookupLLMDRole(t *testing.T) {
+	// The llm-d.ai/role label is read into PodMeta.Role.
+	for _, role := range []string{"prefill", "decode"} {
+		t.Run(role, func(t *testing.T) {
+			client := fake.NewSimpleClientset(
+				makePod("llm-d-0", "inference-prod", "node-1", corev1.PodRunning,
+					map[string]string{labelLLMDRole: role, labelLLMDModel: "qwen3-32b"},
+					nil),
+			)
+			meta, err := NewPodMetaLookup(client).ByNodeAndModel(context.Background(), "node-1", "Qwen/Qwen3-32B")
+			if err != nil {
+				t.Fatalf("ByNodeAndModel: %v", err)
+			}
+			if meta.Role != role {
+				t.Errorf("Role = %q, want %q", meta.Role, role)
+			}
+		})
+	}
+}
+
+func TestPodMetaLookupRoleEmptyWithoutLabel(t *testing.T) {
+	client := fake.NewSimpleClientset(
+		makePod("vllm-0", "prod", "node-1", corev1.PodRunning, nil, nil),
+	)
+	meta, err := NewPodMetaLookup(client).ByNodeAndModel(context.Background(), "node-1", "m")
+	if err != nil {
+		t.Fatalf("ByNodeAndModel: %v", err)
+	}
+	if meta.Role != "" {
+		t.Errorf("Role = %q for pod without llm-d.ai/role, want empty", meta.Role)
+	}
+}
+
+func TestPodMetaLookupPrefersLLMDModelMatch(t *testing.T) {
+	// With two llm-d pods on the same node serving different models, the pod
+	// whose llm-d.ai/model matches the reported model name wins — even when a
+	// non-matching candidate is listed first.
+	client := fake.NewSimpleClientset(
+		makePod("a-other", "prod", "node-1", corev1.PodRunning,
+			map[string]string{labelLLMDModel: "llama-3-8b", labelLLMDRole: "decode"}, nil),
+		makePod("b-match", "prod", "node-1", corev1.PodRunning,
+			map[string]string{labelLLMDModel: "qwen3-32b", labelLLMDRole: "prefill"}, nil),
+	)
+	meta, err := NewPodMetaLookup(client).ByNodeAndModel(context.Background(), "node-1", "Qwen/Qwen3-32B")
+	if err != nil {
+		t.Fatalf("ByNodeAndModel: %v", err)
+	}
+	if meta.Role != "prefill" {
+		t.Errorf("Role = %q, want prefill from the llm-d.ai/model-matching pod", meta.Role)
+	}
+}
+
+func TestPodMetaLookupLLMDModelNeverExcludes(t *testing.T) {
+	// A non-matching llm-d.ai/model must not exclude the pod: llm-d
+	// ModelService names rarely equal the served model name, and dropping the
+	// pod would regress attribution to namespace="unknown".
+	client := fake.NewSimpleClientset(
+		makePod("llm-d-0", "inference-prod", "node-1", corev1.PodRunning,
+			map[string]string{labelLLMDModel: "my-service", labelLLMDRole: "decode"}, nil),
+	)
+	meta, err := NewPodMetaLookup(client).ByNodeAndModel(context.Background(), "node-1", "Qwen/Qwen3-32B")
+	if err != nil {
+		t.Fatalf("ByNodeAndModel: %v", err)
+	}
+	if meta.Namespace != "inference-prod" {
+		t.Errorf("Namespace = %q, want inference-prod (fallback candidate)", meta.Namespace)
+	}
+	if meta.Role != "decode" {
+		t.Errorf("Role = %q, want decode", meta.Role)
+	}
+}
+
+func TestPodMetaLookupAitraLabelBeatsLLMDHint(t *testing.T) {
+	// The explicit aitra-ai.github.io/model-name label stays authoritative:
+	// a pod with a matching aitra label is selected over an earlier pod whose
+	// llm-d.ai/model does not match.
+	client := fake.NewSimpleClientset(
+		makePod("a-llmd", "ns-a", "node-1", corev1.PodRunning,
+			map[string]string{labelLLMDModel: "other-model"}, nil),
+		makePod("b-aitra", "ns-b", "node-1", corev1.PodRunning,
+			map[string]string{labelModelName: "llama"}, nil),
+	)
+	meta, err := NewPodMetaLookup(client).ByNodeAndModel(context.Background(), "node-1", "llama")
+	if err != nil {
+		t.Fatalf("ByNodeAndModel: %v", err)
+	}
+	if meta.Namespace != "ns-b" {
+		t.Errorf("Namespace = %q, want ns-b (exact aitra model-name match)", meta.Namespace)
+	}
+}
+
+func TestLLMDModelMatches(t *testing.T) {
+	tests := []struct {
+		name       string
+		labelValue string
+		modelName  string
+		want       bool
+	}{
+		{"exact", "qwen3-32b", "qwen3-32b", true},
+		{"sanitized full name", "qwen-qwen3-32b", "Qwen/Qwen3-32B", true},
+		{"sanitized basename", "qwen3-32b", "Qwen/Qwen3-32B", true},
+		{"case-insensitive label", "Qwen3-32B", "qwen3-32b", true},
+		{"dots preserved", "llama-3.1-8b-instruct", "meta-llama/Llama-3.1-8B-Instruct", true},
+		{"different model", "llama-3-8b", "Qwen/Qwen3-32B", false},
+		{"empty label", "", "Qwen/Qwen3-32B", false},
+		{"empty model", "qwen3-32b", "", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := llmdModelMatches(tc.labelValue, tc.modelName); got != tc.want {
+				t.Errorf("llmdModelMatches(%q, %q) = %v, want %v", tc.labelValue, tc.modelName, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSanitizeModelName(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"Qwen/Qwen3-32B", "qwen-qwen3-32b"},
+		{"meta-llama/Llama-3.1-8B-Instruct", "meta-llama-llama-3.1-8b-instruct"},
+		{"already-valid_name.v2", "already-valid_name.v2"},
+		{"", ""},
+	}
+	for _, tc := range tests {
+		if got := sanitizeModelName(tc.in); got != tc.want {
+			t.Errorf("sanitizeModelName(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 // --- annotOr ----------------------------------------------------------------
 
 func TestAnnotOrFallback(t *testing.T) {
