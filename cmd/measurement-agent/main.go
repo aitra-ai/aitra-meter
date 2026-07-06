@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 
 	"github.com/aitra-ai/aitra-meter/internal/agent"
@@ -29,6 +32,11 @@ func main() {
 	windowSecs := flag.Int("window-seconds", 30, "Measurement window duration in seconds")
 	logLevel := flag.String("log-level", "info", "Log level: debug | info | warn | error")
 	inferenceEndpoint := flag.String("inference-endpoint", "", "Inference provider metrics URL (e.g. http://localhost:8000/metrics)")
+	metricsAddr := flag.String("metrics-addr", ":9090", "Address for the agent's Prometheus /metrics and health endpoints (empty to disable)")
+	migInstance := flag.String("mig-instance", "", "MIG slice the node's inference server is pinned to, as a mig_instance label (mig-1g.10gb:0) or MIG device UUID (MIG-…). Empty: auto when the node exposes exactly one slice")
+	migNamespace := flag.String("mig-namespace", "", "Namespace label for aitra_mig_* metrics (default \"unknown\")")
+	migTeam := flag.String("mig-team", "", "Team label for aitra_mig_cost_usd_total (default \"unknown\")")
+	electricityCost := flag.Float64("electricity-cost-usd-per-kwh", 0, "Electricity price in USD/kWh for aitra_mig_cost_usd_total; 0 disables the cost counter")
 	flag.Parse()
 
 	log := newLogger(*logLevel)
@@ -58,6 +66,26 @@ func main() {
 		)
 	}
 
+	// MIG detection (issue #43): when the energy provider reports MIG mode,
+	// the loop switches to MIG-aware windows automatically. This log makes
+	// the switch visible at startup.
+	if migp, ok := energyProvider.(provider.MIGEnergyProvider); ok && migp.MIGEnabled() {
+		slices, serr := migp.MIGSlices(context.Background())
+		if serr != nil {
+			log.Warn("MIG mode detected but slice enumeration failed", zap.Error(serr))
+		} else {
+			instances := make([]string, 0, len(slices))
+			for _, s := range slices {
+				instances = append(instances, s.Instance)
+			}
+			log.Info("MIG mode detected — per-slice energy attribution enabled",
+				zap.Int("slice_count", len(slices)),
+				zap.Strings("mig_instances", instances),
+				zap.String("pinned_instance", *migInstance),
+			)
+		}
+	}
+
 	inferenceConfig := map[string]string{}
 	if *inferenceEndpoint != "" {
 		inferenceConfig["endpoint"] = *inferenceEndpoint
@@ -70,12 +98,39 @@ func main() {
 		)
 	}
 
+	// Agent-local Prometheus metrics (aitra_mig_* on MIG nodes) + health probes.
+	if *metricsAddr != "" {
+		mux := http.NewServeMux()
+		mux.Handle("/metrics", promhttp.Handler())
+		mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		})
+		mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"ready"}`))
+		})
+		srv := &http.Server{Addr: *metricsAddr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+		go func() {
+			log.Info("metrics server listening", zap.String("addr", *metricsAddr))
+			if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Error("metrics server stopped", zap.Error(err))
+			}
+		}()
+	}
+
 	loop, err := agent.New(agent.Config{
 		Node:              node,
 		AggregatorAddr:    *aggregatorAddr,
 		WindowDuration:    time.Duration(*windowSecs) * time.Second,
 		EnergyProvider:    energyProvider,
 		InferenceProvider: inferenceProvider,
+		MIG: agent.MIGAttribution{
+			PinnedInstance:        *migInstance,
+			Namespace:             *migNamespace,
+			Team:                  *migTeam,
+			ElectricityCostPerKWh: *electricityCost,
+		},
 	}, log)
 	if err != nil {
 		log.Fatal("agent init failed", zap.Error(err))

@@ -143,6 +143,37 @@ var (
 		Help: "Cumulative energy cost in USD attributed to a tenant, summed per measurement window.",
 	}, []string{"namespace", "team", "cost_center"})
 
+	// --- MIG attribution (issue #43) -----------------------------------------
+	// Populated by the measurement agent on nodes where MIG mode is detected
+	// (nvml energy provider only). mig_instance follows the DCGM naming
+	// convention (e.g. "mig-1g.10gb:0"); gpu_uuid is the UUID of the parent
+	// physical GPU. See docs/reference/mig-support.md for the attribution model.
+
+	// MIGJPerToken is J/token for a MIG slice with a pinned inference server.
+	MIGJPerToken = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "aitra_mig_j_per_token",
+		Help: "Joules per output token for a MIG slice over the last measurement window.",
+	}, []string{"node", "gpu_uuid", "mig_instance", "namespace", "model"})
+
+	// MIGTokensTotal counts output tokens attributed to a MIG slice.
+	MIGTokensTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "aitra_mig_tokens_total",
+		Help: "Cumulative output tokens attributed to a MIG slice.",
+	}, []string{"node", "gpu_uuid", "mig_instance", "namespace", "model"})
+
+	// MIGCostUSDTotal accrues per-slice energy cost. Absent until the agent is
+	// started with --electricity-cost-usd-per-kwh > 0.
+	MIGCostUSDTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "aitra_mig_cost_usd_total",
+		Help: "Cumulative energy cost in USD attributed to a MIG slice.",
+	}, []string{"node", "gpu_uuid", "mig_instance", "namespace", "team"})
+
+	// MIGPowerWatts is the power share attributed to a MIG slice.
+	MIGPowerWatts = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "aitra_mig_power_watts",
+		Help: "Power in watts attributed to a MIG slice: parent GPU window energy split by compute slice fraction, divided by window duration.",
+	}, []string{"node", "gpu_uuid", "mig_instance"})
+
 	// GPUServingUtilizationRatio is the fraction of elapsed time a node was
 	// serving inference requests: (window - idle) / window. Distinct from DCGM SM
 	// utilization. Populated by the idle-tracking follow-up to #40.
