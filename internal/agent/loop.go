@@ -52,6 +52,12 @@ type Config struct {
 	// EnergyProvider and InferenceProvider are the measurement backends.
 	EnergyProvider    provider.EnergyProvider
 	InferenceProvider provider.InferenceMetricsProvider
+
+	// MIG configures per-slice attribution labels on MIG nodes. Only
+	// consulted when EnergyProvider implements provider.MIGEnergyProvider
+	// and reports MIG mode; the zero value is valid (labels default to
+	// "unknown", cost counter disabled).
+	MIG MIGAttribution
 }
 
 // Loop runs the measurement loop for a single node.
@@ -150,8 +156,19 @@ func (l *Loop) Run(ctx context.Context) {
 }
 
 // reportWindow ends the current energy window and sends the WindowReport.
+// On MIG nodes the window is ended via EndWindowMIG so the per-slice
+// breakdown feeds the aitra_mig_* metrics alongside the node total.
 func (l *Loop) reportWindow(ctx context.Context, windowID string) {
-	joules, err := l.cfg.EnergyProvider.EndWindow(ctx, windowID)
+	var (
+		joules    float64
+		migSlices []provider.MIGSliceEnergy
+		err       error
+	)
+	if migp, ok := l.cfg.EnergyProvider.(provider.MIGEnergyProvider); ok && migp.MIGEnabled() {
+		joules, migSlices, err = migp.EndWindowMIG(ctx, windowID)
+	} else {
+		joules, err = l.cfg.EnergyProvider.EndWindow(ctx, windowID)
+	}
 	if err != nil {
 		l.log.Warn("EndWindow failed — dropping window",
 			zap.String("window_id", windowID),
@@ -190,6 +207,12 @@ func (l *Loop) reportWindow(ctx context.Context, windowID string) {
 				zap.Float64("tpot_sum_seconds", sample.TPOTSum),
 			)
 		}
+	}
+
+	// MIG per-slice metrics (issue #43). Power is recorded for every slice;
+	// token-derived metrics only for the pinned slice on serving windows.
+	if len(migSlices) > 0 {
+		observeMIGWindow(l.cfg.Node, modelName, l.cfg.MIG, migSlices, tokenDelta)
 	}
 
 	powerWatts := joules / l.cfg.WindowDuration.Seconds()

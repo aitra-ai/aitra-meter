@@ -23,6 +23,14 @@ newer (V100, T4, A100, H100, H200, L40S, B200). For each measurement window,
 the provider records the counter value at window start and end; the delta is
 the energy consumed during that window.
 
+**MIG:** on GPUs partitioned with MIG (A100, A30, H100, H200, B200), the
+provider detects MIG mode at startup and additionally attributes each window's
+energy to individual MIG slices, exposed as the `aitra_mig_*` metrics on the
+agent's `:9090/metrics` endpoint. Per-slice energy is attributed
+proportionally (there is no per-slice energy sensor), and the feature has not
+yet been validated on MIG hardware — see
+[MIG support](../reference/mig-support.md) for the model and limitations.
+
 **Helm:**
 
 ```yaml

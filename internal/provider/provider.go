@@ -49,6 +49,72 @@ type LatencyProvider interface {
 	Latency(ctx context.Context) (sample LatencySample, ok bool, err error)
 }
 
+// MIGSlice identifies one MIG (Multi-Instance GPU) compute instance on an
+// NVIDIA GPU with MIG mode enabled.
+type MIGSlice struct {
+	// ParentUUID is the UUID of the physical GPU the slice belongs to
+	// (e.g. "GPU-5c8e1a2f-…"). Used as the gpu_uuid metric label.
+	ParentUUID string
+
+	// ParentIndex is the NVML index of the physical GPU.
+	ParentIndex int
+
+	// Index is the MIG device index within the parent GPU, in NVML
+	// enumeration order (the order `nvidia-smi -L` lists MIG devices).
+	Index int
+
+	// UUID is the MIG device UUID (e.g. "MIG-8bf7c667-…"). This is the value
+	// a pinned workload sets in CUDA_VISIBLE_DEVICES.
+	UUID string
+
+	// GPUInstanceID is the NVML GPU instance ID. Matches DCGM's GPU_I_ID label.
+	GPUInstanceID int
+
+	// Profile is the MIG profile name, e.g. "1g.10gb".
+	Profile string
+
+	// Instance is the Prometheus mig_instance label value for this slice,
+	// e.g. "mig-1g.10gb:0". The suffix is Index.
+	Instance string
+
+	// ComputeSlices is the number of GPU compute slices the instance owns
+	// (NVML GpuInstanceSliceCount). Drives proportional energy attribution.
+	ComputeSlices int
+
+	// MemoryMB is the framebuffer memory of the instance in MiB.
+	MemoryMB uint64
+}
+
+// MIGSliceEnergy is the energy attributed to one MIG slice over one
+// measurement window.
+type MIGSliceEnergy struct {
+	Slice      MIGSlice
+	Joules     float64
+	PowerWatts float64
+}
+
+// MIGEnergyProvider is an optional interface an EnergyProvider can implement
+// when it can attribute node energy to individual MIG slices. The agent
+// detects it with a type assertion at startup and switches to MIG-aware
+// windows automatically when MIGEnabled reports true.
+type MIGEnergyProvider interface {
+	EnergyProvider
+
+	// MIGEnabled reports whether at least one GPU on the node has MIG mode
+	// enabled. Evaluated once at provider init.
+	MIGEnabled() bool
+
+	// MIGSlices enumerates the MIG compute instances currently configured
+	// on the node.
+	MIGSlices(ctx context.Context) ([]MIGSlice, error)
+
+	// EndWindowMIG behaves like EndWindow but additionally returns the
+	// per-slice energy breakdown for the window. The error refers to the
+	// total measurement only: when per-slice attribution fails, the total is
+	// still returned with an empty or partial slice list.
+	EndWindowMIG(ctx context.Context, windowID string) (float64, []MIGSliceEnergy, error)
+}
+
 // InferenceMetricsProvider is the interface that inference server adapters must implement.
 // The default implementation reads vLLM's Prometheus /metrics endpoint.
 // Any inference server exposing token counts and request state can implement this.

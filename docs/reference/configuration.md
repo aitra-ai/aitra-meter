@@ -32,7 +32,18 @@ Complete reference for all Helm values, CRD fields, and pod annotations.
 | `measurementAgent.inferenceProvider.config.avg_output_tokens_per_request` | string | `"1"` | `triton` only — tokens-per-request multiplier for the token approximation (Triton has no direct token counter) |
 | `measurementAgent.cvThreshold` | float | `0.03` | CV gate threshold. Measurements with rolling CV above this are flagged `unstable` |
 | `measurementAgent.cvWindowSize` | int | `100` | Number of windows in the rolling CV calculation |
+| `measurementAgent.mig.pinnedInstance` | string | `""` | MIG slice the node's inference server is pinned to, as a `mig_instance` label (`mig-1g.10gb:0`) or MIG device UUID (`MIG-…`, the pod's `CUDA_VISIBLE_DEVICES` value). Empty: auto-pin when the node exposes exactly one slice |
+| `measurementAgent.mig.namespace` | string | `""` | `namespace` label on `aitra_mig_*` token/cost metrics (`unknown` when empty) |
+| `measurementAgent.mig.team` | string | `""` | `team` label on `aitra_mig_cost_usd_total` (`unknown` when empty) |
+| `measurementAgent.mig.electricityCostUSDPerKWh` | float | `0` | Electricity price in USD/kWh for `aitra_mig_cost_usd_total`. `0` disables the cost counter |
 | `measurementAgent.logLevel` | string | `info` | Log level: `debug`, `info`, `warn`, `error` |
+
+MIG mode itself is detected automatically at startup (`nvml` energy provider only);
+the `measurementAgent.mig.*` values map to the agent flags `--mig-instance`,
+`--mig-namespace`, `--mig-team`, and `--electricity-cost-usd-per-kwh`. The agent
+serves its own Prometheus `/metrics` and health endpoints on `--metrics-addr`
+(default `:9090`; empty disables). See
+[MIG support — Configuration](mig-support.md#configuration).
 
 ### `aggregationService`
 
