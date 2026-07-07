@@ -3,12 +3,14 @@ package agent
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"sync"
 	"testing"
 	"time"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"google.golang.org/grpc"
 
 	measurementv1 "github.com/aitra-ai/aitra-meter/api/proto/measurement/v1"
@@ -184,6 +186,73 @@ func (i *incrementingInference) OutputTokens(_ context.Context) (uint64, error) 
 }
 func (i *incrementingInference) RequestsRunning(_ context.Context) (int, error) { return 1, nil }
 func (i *incrementingInference) ModelName(_ context.Context) (string, error)    { return i.model, nil }
+
+// latencyInference is a fakeInference that also implements the optional
+// provider.LatencyProvider interface and counts Latency calls.
+type latencyInference struct {
+	fakeInference
+	mu    sync.Mutex
+	calls int
+}
+
+func (l *latencyInference) Latency(_ context.Context) (provider.LatencySample, bool, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.calls++
+	return provider.LatencySample{TTFTCount: 10, TTFTSum: 1.5, TPOTCount: 900, TPOTSum: 12}, true, nil
+}
+
+func (l *latencyInference) callCount() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.calls
+}
+
+func TestLoopReadsLatencyWhenDebugEnabled(t *testing.T) {
+	addr, svc, stop := startFakeAggSvc(t)
+	defer stop()
+
+	energy := &fakeEnergy{joules: 100}
+	inf := &latencyInference{fakeInference: fakeInference{tokens: 500, running: 1, model: "m"}}
+	loop := newTestLoop(t, addr, energy, &inf.fakeInference)
+	loop.cfg.InferenceProvider = inf
+	// newTestLoop uses zap.NewNop(), whose core is disabled at every level.
+	// Swap in a debug-enabled logger that discards output.
+	loop.log = zap.New(zapcore.NewCore(
+		zapcore.NewJSONEncoder(zap.NewDevelopmentEncoderConfig()),
+		zapcore.AddSync(io.Discard),
+		zap.DebugLevel,
+	))
+
+	runFor(loop, 100*time.Millisecond)
+
+	if len(svc.all()) == 0 {
+		t.Fatal("expected at least one WindowReport")
+	}
+	if inf.callCount() == 0 {
+		t.Error("Latency was never called despite debug logging being enabled")
+	}
+}
+
+func TestLoopSkipsLatencyWhenDebugDisabled(t *testing.T) {
+	addr, svc, stop := startFakeAggSvc(t)
+	defer stop()
+
+	energy := &fakeEnergy{joules: 100}
+	inf := &latencyInference{fakeInference: fakeInference{tokens: 500, running: 1, model: "m"}}
+	loop := newTestLoop(t, addr, energy, &inf.fakeInference)
+	loop.cfg.InferenceProvider = inf
+	// newTestLoop uses zap.NewNop(): debug is disabled → no extra scrape.
+
+	runFor(loop, 100*time.Millisecond)
+
+	if len(svc.all()) == 0 {
+		t.Fatal("expected at least one WindowReport")
+	}
+	if n := inf.callCount(); n != 0 {
+		t.Errorf("Latency called %d times with debug logging disabled, want 0", n)
+	}
+}
 
 func TestLoopIdleWindowSentNotAccepted(t *testing.T) {
 	// Zero tokens → aggregation service returns accepted=false.

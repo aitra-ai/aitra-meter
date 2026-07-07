@@ -29,6 +29,26 @@ type EnergyProvider interface {
 	Name() string
 }
 
+// LatencySample holds cumulative latency-histogram totals read from an
+// inference server. Values are running totals (the Prometheus _count and _sum
+// series of the underlying histograms); callers compute deltas between windows.
+type LatencySample struct {
+	TTFTCount float64 // time-to-first-token histogram sample count
+	TTFTSum   float64 // time-to-first-token histogram sum, seconds
+	TPOTCount float64 // time-per-output-token histogram sample count
+	TPOTSum   float64 // time-per-output-token histogram sum, seconds
+}
+
+// LatencyProvider is an optional interface for inference providers that also
+// expose time-to-first-token / time-per-output-token histograms. The agent
+// reads these for correlation with energy windows (debug logging only);
+// Aitra does not re-expose them as its own metrics.
+type LatencyProvider interface {
+	// Latency returns the current latency totals. ok is false when the
+	// server does not expose the latency metrics (absence is not an error).
+	Latency(ctx context.Context) (sample LatencySample, ok bool, err error)
+}
+
 // InferenceMetricsProvider is the interface that inference server adapters must implement.
 // The default implementation reads vLLM's Prometheus /metrics endpoint.
 // Any inference server exposing token counts and request state can implement this.

@@ -25,6 +25,9 @@ spec:
         # Force pod restart when ConfigMap changes.
         checksum/config: {{ include (print $.Template.BasePath "/measurement-agent-config.yaml") . | sha256sum }}
     spec:
+      # The chart ServiceAccount grants pod list/watch — required by
+      # --inference-provider=auto for pod-annotation engine discovery.
+      serviceAccountName: {{ include "aitra-meter.serviceAccountName" . }}
       # GPU nodes require host PID namespace for NVML/Zeus access.
       hostPID: true
       nodeSelector:
@@ -49,9 +52,18 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
-            {{- if .Values.measurementAgent.inferenceProvider.config.endpoint }}
-            - name: INFERENCE_ENDPOINT
-              value: {{ .Values.measurementAgent.inferenceProvider.config.endpoint | quote }}
+            {{- /*
+              Every inferenceProvider.config key is passed to the agent as an
+              INFERENCE_CONFIG_<KEY> env var (keys must be lowercase
+              snake_case). With type=auto the endpoint key is skipped: values
+              merging would otherwise leak the chart's default localhost
+              endpoint and shadow the endpoint discovered from the pod IP.
+            */}}
+            {{- range $k, $v := .Values.measurementAgent.inferenceProvider.config }}
+            {{- if and $v (not (and (eq $k "endpoint") (eq $.Values.measurementAgent.inferenceProvider.type "auto"))) }}
+            - name: INFERENCE_CONFIG_{{ upper $k }}
+              value: {{ $v | quote }}
+            {{- end }}
             {{- end }}
           ports:
             - name: metrics

@@ -26,8 +26,10 @@ Complete reference for all Helm values, CRD fields, and pod annotations.
 | `measurementAgent.resources.limits.memory` | string | `256Mi` | Memory limit |
 | `measurementAgent.energyProvider.type` | string | `nvml` | Energy provider name. Built-in: `nvml`, `amd`, `dcgm`, `kepler`. Community: `zeus` |
 | `measurementAgent.energyProvider.config` | map | `{}` | Provider-specific config key-value pairs |
-| `measurementAgent.inferenceProvider.type` | string | `vllm` | Inference provider name. Built-in: `vllm`, `generic-prometheus` |
-| `measurementAgent.inferenceProvider.config.endpoint` | string | `http://localhost:8000/metrics` | Inference server metrics endpoint |
+| `measurementAgent.inferenceProvider.type` | string | `vllm` | Inference provider name. Built-in: `vllm`, `sglang`, `triton`, `generic-prometheus`, `auto` (pod-annotation/label discovery) |
+| `measurementAgent.inferenceProvider.config` | map | — | Provider-specific config. Every key is passed to the agent as an `INFERENCE_CONFIG_<KEY>` environment variable (keys must be lowercase snake_case), e.g. `output_tokens_metric`, `requests_running_metric`, `model_name_label` for `generic-prometheus` |
+| `measurementAgent.inferenceProvider.config.endpoint` | string | `http://localhost:8000/metrics` | Inference server metrics endpoint. Ignored with `type: auto` — the endpoint discovered from the pod IP is authoritative |
+| `measurementAgent.inferenceProvider.config.avg_output_tokens_per_request` | string | `"1"` | `triton` only — tokens-per-request multiplier for the token approximation (Triton has no direct token counter) |
 | `measurementAgent.cvThreshold` | float | `0.03` | CV gate threshold. Measurements with rolling CV above this are flagged `unstable` |
 | `measurementAgent.cvWindowSize` | int | `100` | Number of windows in the rolling CV calculation |
 | `measurementAgent.logLevel` | string | `info` | Log level: `debug`, `info`, `warn`, `error` |
@@ -141,6 +143,7 @@ Set on inference server pods to enable workload-level attribution.
 | `aitra-ai.github.io/precision` | `fp16`, `fp8`, `bf16` | No | Model precision. `unknown` if absent |
 | `aitra-ai.github.io/team` | any string | No | Team name for attribution |
 | `aitra-ai.github.io/cost-centre` | any string | No | Cost centre code for chargeback |
+| `aitra-ai.github.io/inference-provider` | `vllm`, `sglang`, `triton`, `tgi` | No | Explicit engine selection for `inferenceProvider.type: auto`. Takes priority over the `app` label. Unknown values fall back to `generic-prometheus`. See the [inference providers guide](../guides/inference-providers.md) |
 
 ## Node labels
 

@@ -35,7 +35,6 @@ measurementAgent:
   #         present on any node running the AMD GPU operator or a manual ROCm
   #         installation. No additional installation required.
   #
-  # Inference providers: vllm (default) | generic-prometheus
   energyProvider:
     type: nvml
     config: {}
@@ -52,11 +51,36 @@ measurementAgent:
   #   config:
   #     endpoint: "http://prometheus-operated.monitoring.svc.cluster.local:9090"
   #     container_label: "container"
+
+  # Inference providers: vllm (default) | sglang | triton | generic-prometheus | auto
+  # Per-engine ready-made values files: examples/inference-servers/
+  # Full details: docs/guides/inference-providers.md
+  #
+  # Every config key is passed to the agent as an INFERENCE_CONFIG_<KEY>
+  # environment variable — keys must be lowercase snake_case. With type: auto
+  # the endpoint key is ignored (the endpoint discovered from the pod IP is
+  # authoritative); all other config keys still apply.
   inferenceProvider:
     type: vllm
     config:
       endpoint: "http://localhost:8000/metrics"
-  # generic-prometheus example (works with TGI, SGLang, Ollama, Triton, any custom server):
+  # sglang example (server must run with --enable-metrics):
+  # inferenceProvider:
+  #   type: sglang
+  #   config:
+  #     endpoint: "http://localhost:30000/metrics"
+  # triton example (token counts are approximate — see docs/guides/inference-providers.md):
+  # inferenceProvider:
+  #   type: triton
+  #   config:
+  #     endpoint: "http://localhost:8002/metrics"
+  #     avg_output_tokens_per_request: "250"
+  # auto-discovery example (detects vllm/sglang/triton/tgi from pod
+  # annotations or app labels on the agent's node):
+  # inferenceProvider:
+  #   type: auto
+  #   config: {}
+  # generic-prometheus example (works with TGI, Ollama via sidecar exporter, any custom server):
   # inferenceProvider:
   #   type: generic-prometheus
   #   config:

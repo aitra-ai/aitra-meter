@@ -141,7 +141,7 @@ Four dashboard JSON files ship in `helm/aitra-meter/files/`. Set `grafana.enable
 
 There are three high-value contribution paths that require no changes to core code:
 
-**Add a new inference server** — implement `InferenceMetricsProvider`, configure metric names for your server's Prometheus endpoint. The generic-prometheus provider is the pattern; TGI, SGLang, and Ollama configs are in `examples/inference-servers/`.
+**Add a new inference server** — implement `InferenceMetricsProvider`, configure metric names for your server's Prometheus endpoint. The generic-prometheus provider is the pattern; per-engine configs (vLLM, SGLang, Triton, TGI, Ollama) are in `examples/inference-servers/`.
 
 **Add a new energy backend** — implement `EnergyProvider` and register via `init()`. Zeus and NVML are the working examples.
 
@@ -153,6 +153,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for full guidance.
 
 ### Guides
 - [Getting started](docs/guides/getting-started.md) — install and first measurement in 15 minutes
+- [Inference providers](docs/guides/inference-providers.md) — vLLM, SGLang, Triton, generic-prometheus, auto-discovery
 - [Writing a provider](docs/guides/writing-a-provider.md) — add a new inference server or energy backend
 - [Operations](docs/guides/operations.md) — upgrading, scaling, air-gapped install
 - [KEDA integration](docs/guides/keda-integration.md)
