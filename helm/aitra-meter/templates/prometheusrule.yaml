@@ -1,0 +1,25 @@
+{{- if .Values.costBudgets }}
+---
+# Per-namespace 24h inference-energy cost budgets, rendered from .Values.costBudgets.
+# Exposes aitra_tenant_cost_budget_usd_24h{namespace} as a recording rule, which the
+# TenantCostBudgetExceeded alert (examples/alerting-rules.yaml) compares against.
+# See docs/guides/cost-budgets.md.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "aitra-meter.fullname" . }}-cost-budgets
+  namespace: {{ .Values.prometheus.serviceMonitor.namespace }}
+  labels:
+    {{- include "aitra-meter.labels" . | nindent 4 }}
+    role: alert-rules
+spec:
+  groups:
+    - name: aitra-meter-cost-budgets
+      rules:
+        {{- range $namespace, $budget := .Values.costBudgets }}
+        - record: aitra_tenant_cost_budget_usd_24h
+          expr: "{{ $budget }}"
+          labels:
+            namespace: {{ $namespace | quote }}
+        {{- end }}
+{{- end }}

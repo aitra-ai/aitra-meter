@@ -58,7 +58,7 @@ type combo struct {
 	team       string
 	costCentre string
 	baseJPT    float64
-	tier        string
+	tier       string
 	refJPT     float64
 	method     string
 }

@@ -3,6 +3,7 @@
 | Name | GitHub | Affiliation |
 |---|---|---|
 | Steven Phtan | @stevenphtan | Aitra / SODA Foundation |
+| Sanil Kumar | @skdwriting | Caze Labs / SODA Foundation |
 
 ## Project affiliations
 

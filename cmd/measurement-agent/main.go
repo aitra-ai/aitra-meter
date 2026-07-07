@@ -14,9 +14,7 @@ import (
 	"github.com/aitra-ai/aitra-meter/internal/provider"
 
 	// Import providers to trigger their init() registration.
-	// NOTE: deploy/aitra-meter-24 builds CGO-free (distroless). The amd and nvml
-	// providers require cgo, so they are omitted here; this NVIDIA cluster uses
-	// the pure-Go dcgm provider (scrapes node-local dcgm-exporter).
+	_ "github.com/aitra-ai/aitra-meter/internal/provider/energy/amd"
 	_ "github.com/aitra-ai/aitra-meter/internal/provider/energy/dcgm"
 	_ "github.com/aitra-ai/aitra-meter/internal/provider/energy/zeus"
 	_ "github.com/aitra-ai/aitra-meter/internal/provider/inference/genericprometheus"
@@ -24,12 +22,12 @@ import (
 )
 
 func main() {
-	energyType     := flag.String("energy-provider",    "nvml", "Energy provider: nvml | amd | zeus | dcgm")
-	inferenceType  := flag.String("inference-provider", "vllm", "Inference provider: vllm | generic-prometheus")
-	aggregatorAddr := flag.String("aggregator",         "aitra-meter-aggregation:9091", "Aggregation service gRPC address")
-	nodeName       := flag.String("node",               "", "Kubernetes node name (defaults to NODE_NAME env var)")
-	windowSecs     := flag.Int(   "window-seconds",     30, "Measurement window duration in seconds")
-	logLevel       := flag.String("log-level",          "info", "Log level: debug | info | warn | error")
+	energyType := flag.String("energy-provider", "nvml", "Energy provider: nvml | amd | zeus | dcgm")
+	inferenceType := flag.String("inference-provider", "vllm", "Inference provider: vllm | generic-prometheus")
+	aggregatorAddr := flag.String("aggregator", "aitra-meter-aggregation:9091", "Aggregation service gRPC address")
+	nodeName := flag.String("node", "", "Kubernetes node name (defaults to NODE_NAME env var)")
+	windowSecs := flag.Int("window-seconds", 30, "Measurement window duration in seconds")
+	logLevel := flag.String("log-level", "info", "Log level: debug | info | warn | error")
 	inferenceEndpoint := flag.String("inference-endpoint", "", "Inference provider metrics URL (e.g. http://localhost:8000/metrics)")
 	energyEndpoint := flag.String("energy-endpoint", "", "Energy provider metrics URL (e.g. http://localhost:9400/metrics for dcgm)")
 	flag.Parse()

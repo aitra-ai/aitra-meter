@@ -13,6 +13,7 @@ import (
 	"time"
 
 	gonvml "github.com/NVIDIA/go-nvml/pkg/nvml"
+
 	"github.com/aitra-ai/aitra-meter/internal/provider"
 )
 
@@ -34,8 +35,8 @@ type NVMLProvider struct {
 }
 
 type window struct {
-	startTime    time.Time
-	startEnergy  float64
+	startTime   time.Time
+	startEnergy float64
 }
 
 func (n *NVMLProvider) init() error {
