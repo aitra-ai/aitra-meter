@@ -37,3 +37,7 @@ Thumbs.db
 build/
 __pycache__/
 *.pyc
+
+# local build artifacts
+/measurement-agent
+/aggregation-service
