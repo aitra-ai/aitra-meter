@@ -1,0 +1,75 @@
+# Draft registry addition for open-telemetry/semantic-conventions-genai,
+# model/gen-ai/metrics.yaml (file_format: definition/2).
+# Part of https://github.com/aitra-ai/aitra-meter/issues/38 — see
+# otel-semconv-energy.md in this directory for motivation and semantics.
+#
+# k8s.namespace.name and k8s.cluster.name are defined in the main
+# semantic-conventions registry; whether they can be ref'd across registries
+# is an open question for upstream reviewers (fallback: drop to emitter docs).
+file_format: definition/2
+attribute_groups:
+  - id: metric_attributes.gen_ai.infrastructure
+    visibility: internal
+    attributes:
+      - ref: gen_ai.request.model
+        requirement_level: recommended
+      - ref: gen_ai.provider.name
+        requirement_level: recommended
+      - ref: server.address
+        brief: The node the accelerator is attached to.
+        requirement_level: recommended
+      - ref: k8s.namespace.name
+        requirement_level: opt_in
+      - ref: k8s.cluster.name
+        requirement_level: opt_in
+metrics:
+  - name: gen_ai.infrastructure.energy
+    instrument: counter
+    unit: "J"
+    brief: 'Cumulative accelerator energy consumed serving GenAI workloads.'
+    stability: development
+    annotations:
+      code_generation:
+        metric_value_type: double
+    attributes:
+      - ref_group: metric_attributes.gen_ai.infrastructure
+  - name: gen_ai.infrastructure.energy.per_token
+    instrument: gauge
+    unit: "J"
+    brief: 'Accelerator energy per generated output token over the most recent measurement window.'
+    note: >
+      Computed as the accelerator energy delta divided by the output-token delta
+      over a fixed measurement window (window length is an implementation choice).
+      MUST NOT be emitted for windows with zero output tokens; report
+      `gen_ai.infrastructure.idle_ratio` instead so that idle consumption
+      remains visible.
+    stability: development
+    annotations:
+      code_generation:
+        metric_value_type: double
+    attributes:
+      - ref_group: metric_attributes.gen_ai.infrastructure
+  - name: gen_ai.infrastructure.power
+    instrument: gauge
+    unit: "W"
+    brief: 'Instantaneous accelerator power draw.'
+    stability: development
+    annotations:
+      code_generation:
+        metric_value_type: double
+    attributes:
+      - ref_group: metric_attributes.gen_ai.infrastructure
+  - name: gen_ai.infrastructure.idle_ratio
+    instrument: gauge
+    unit: "1"
+    brief: 'Fraction of the measurement window during which the accelerator served no GenAI requests.'
+    note: >
+      1.0 means the accelerator drew power for the whole window without serving
+      any GenAI request. Emitters SHOULD keep reporting energy and power during
+      idle windows — idle consumption is signal, not noise.
+    stability: development
+    annotations:
+      code_generation:
+        metric_value_type: double
+    attributes:
+      - ref_group: metric_attributes.gen_ai.infrastructure
