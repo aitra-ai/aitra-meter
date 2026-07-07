@@ -22,6 +22,12 @@ type PodMeta struct {
 	Precision  string // annotation aitra-ai.github.io/precision, or "unknown"
 	Team       string // annotation aitra-ai.github.io/team, or ""
 	CostCentre string // annotation aitra-ai.github.io/cost-centre, or ""
+
+	// Role is the serving phase for disaggregated inference, read from the
+	// llm-d.ai/role pod label ("prefill" | "decode"). Empty for conventional
+	// (non-disaggregated) serving; an empty value is dropped by Prometheus,
+	// so the role dimension adds no cardinality outside llm-d deployments.
+	Role string
 }
 
 // PodLookup is the interface the Resolver uses to fetch pod metadata from

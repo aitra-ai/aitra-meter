@@ -120,6 +120,46 @@ func TestLoopJPerTokenArithmetic(t *testing.T) {
 	}
 }
 
+// TestLoopJPerTokenRoleLabel checks the llm-d serving phase resolved from the
+// pod's llm-d.ai/role label reaches the aitra_j_per_token role label, so
+// prefill and decode J/token become separate series (issue #49). Pods without
+// the label produce role="", which Prometheus treats as an absent label.
+func TestLoopJPerTokenRoleLabel(t *testing.T) {
+	tests := []struct {
+		name  string
+		model string // unique per case: gauge children are process-global
+		role  string
+	}{
+		{name: "prefill", model: "role-model-prefill", role: "prefill"},
+		{name: "decode", model: "role-model-decode", role: "decode"},
+		{name: "conventional serving", model: "role-model-none", role: ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			loop, _ := newTestLoop(
+				map[string]PodMeta{"node-1/" + tc.model: {
+					Namespace: "prod", Workload: "chat", Precision: "fp16", Role: tc.role,
+				}},
+				PolicyConfig{DefaultMethod: AttributionDirect},
+				nil,
+			)
+			w := baseReport()
+			w.ModelName = tc.model
+			if _, err := loop.ReportWindow(context.Background(), w); err != nil {
+				t.Fatalf("ReportWindow: %v", err)
+			}
+			got := testutil.ToFloat64(metrics.JPerToken.WithLabelValues(
+				"prod", "chat", tc.model, "h100", "fp16",
+				string(TierUncalibrated), string(AttributionDirect), tc.role,
+			))
+			want := 412.4 / 1328.0
+			if math.Abs(got-want) > 1e-9 {
+				t.Errorf("j_per_token{role=%q} = %v, want %v", tc.role, got, want)
+			}
+		})
+	}
+}
+
 // TestLoopModelTokensTotalAccumulates checks the model-level token counter is
 // monotonic across windows. A unique model label isolates this counter child
 // from other tests (Prometheus counters are process-global and never reset).

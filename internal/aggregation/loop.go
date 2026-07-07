@@ -129,7 +129,7 @@ func (l *Loop) ReportWindow(
 
 	metrics.JPerToken.WithLabelValues(
 		attr.Namespace, attr.Workload, w.ModelName, hw,
-		attr.Precision, tier, method,
+		attr.Precision, tier, method, attr.Role,
 	).Set(jpt)
 
 	if jpt > 0 {
