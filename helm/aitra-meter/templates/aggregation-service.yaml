@@ -22,7 +22,7 @@ spec:
       serviceAccountName: {{ include "aitra-meter.serviceAccountName" . }}
       containers:
         - name: aggregation-service
-          image: "{{ .Values.aggregationService.image.repository }}:{{ .Values.aggregationService.image.tag }}"
+          image: "{{ .Values.aggregationService.image.repository }}:{{ .Values.aggregationService.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.aggregationService.image.pullPolicy }}
           args:
             - --cluster={{ required "cluster.name is required" .Values.cluster.name }}
