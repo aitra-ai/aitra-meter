@@ -37,7 +37,7 @@ spec:
           effect: NoSchedule
       containers:
         - name: measurement-agent
-          image: "{{ .Values.measurementAgent.image.repository }}:{{ .Values.measurementAgent.image.tag }}"
+          image: "{{ .Values.measurementAgent.image.repository }}:{{ .Values.measurementAgent.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.measurementAgent.image.pullPolicy }}
           args:
             - --energy-provider={{ .Values.measurementAgent.energyProvider.type }}

@@ -34,6 +34,11 @@ secrets/
 Thumbs.db
 
 # Build
-build/
+# Go build output. Note: this must NOT swallow build/*/Dockerfile — the
+# release workflow builds the agent and aggregation images from that
+# path, and a bare "build/" rule silently kept those Dockerfiles out of
+# the repo, breaking every tagged release.
+/build/bin/
+/build/out/
 __pycache__/
 *.pyc

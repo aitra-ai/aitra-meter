@@ -8,7 +8,8 @@ cluster:
 measurementAgent:
   image:
     repository: ghcr.io/aitra-ai/aitra-meter/measurement-agent
-    tag: "0.1.0"
+    # Defaults to the chart appVersion. Override only to pin a specific image.
+    tag: ""
     pullPolicy: IfNotPresent
   # Node selector — DaemonSet only schedules to nodes with this label
   nodeSelector:
@@ -63,7 +64,8 @@ measurementAgent:
 aggregationService:
   image:
     repository: ghcr.io/aitra-ai/aitra-meter/aggregation-service
-    tag: "0.1.0"
+    # Defaults to the chart appVersion. Override only to pin a specific image.
+    tag: ""
     pullPolicy: IfNotPresent
   replicas: 1
   resources:
@@ -79,7 +81,8 @@ dashboard:
   enabled: true
   image:
     repository: ghcr.io/aitra-ai/aitra-meter/dashboard
-    tag: "0.1.0"
+    # Defaults to the chart appVersion. Override only to pin a specific image.
+    tag: ""
     pullPolicy: IfNotPresent
   replicas: 1
   port: 3000
