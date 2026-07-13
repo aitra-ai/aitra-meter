@@ -98,6 +98,21 @@ prometheus:
     interval: 15s
     scrapeTimeout: 10s
 
+# Grafana dashboard provisioning.
+# When enabled, all dashboard JSON files in files/ (overview, cost attribution,
+# AI efficiency, hardware efficiency) are rendered into a ConfigMap labelled for
+# the Grafana dashboard sidecar (kube-prometheus-stack ships it by default), so
+# the dashboards appear in Grafana without a manual import step.
+grafana:
+  enabled: false
+  # Label key/value the Grafana sidecar watches for on dashboard ConfigMaps.
+  # kube-prometheus-stack default: grafana_dashboard=1.
+  sidecarLabel: grafana_dashboard
+  sidecarLabelValue: "1"
+  # Optional Grafana folder for the provisioned dashboards (grafana_folder
+  # annotation, honoured by the sidecar). Empty = Grafana default folder.
+  folder: ""
+
 # Storage backend — SQLite by default (embedded, no infrastructure required).
 storage:
   backend: sqlite
