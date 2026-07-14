@@ -40,6 +40,33 @@ measurementAgent:
   energyProvider:
     type: nvml
     config: {}
+  # Host energy — energy consumed by everything on the node that is not the
+  # accelerator (CPU package, DRAM, and depending on platform the wider board).
+  #
+  # aitra_j_per_token measures GPU energy only. With a host provider configured,
+  # aitra_system_j_per_token reports total system energy per token.
+  #
+  #   rapl         x86 (Intel and AMD). Reads /sys/class/powercap.
+  #   grace-hwmon  Grace Superchip (72-core). Reads hwmon power rails.
+  #   none         No host measurement. Host metrics are omitted, not zeroed.
+  #
+  # Not available on all hardware. NVIDIA GB10 / DGX Spark exposes no host power
+  # telemetry, so host metrics are omitted there. This is reported as unavailable
+  # and never as zero: a zero would make an unmeasured node look more efficient
+  # than a measured one. See docs/guides/host-energy.md.
+  hostEnergyProvider:
+    type: none
+    config: {}
+  # NVML library injection (optional). On managed GPU nodes the container runtime
+  # mounts libnvidia-ml.so.1 automatically. On kind / bare-metal nodes where it
+  # does not, point this at a driver-matched libnvidia-ml.so.1 present on the node
+  # and the DaemonSet will mount it into the agent at /opt/nvml (added to
+  # LD_LIBRARY_PATH). Leave empty to disable.
+  nvml:
+    hostLibraryPath: ""
+  # The agent is a gRPC-push loop with no HTTP server in this build. Leave false
+  # unless a build wires an HTTP health/metrics server on the metrics port.
+  httpProbes: false
   # dcgm example (scrape a node-local dcgm-exporter instead of reading NVML in-process):
   # energyProvider:
   #   type: dcgm

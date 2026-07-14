@@ -6,6 +6,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	measurementv1 "github.com/aitra-ai/aitra-meter/api/proto/measurement/v1"
@@ -91,6 +92,114 @@ func baseReport() *measurementv1.WindowReport {
 		EnergyProvider:    "nvml",
 		InferenceProvider: "vllm",
 		TimestampUnixMs:   1716000000000,
+	}
+}
+
+// gatheredSample searches the default Prometheus gatherer for a sample of metric
+// `name` whose labels include all of labelWant. It reads without touching
+// WithLabelValues, which would itself create a zero series and defeat an absence
+// check. Returns (found, value).
+func gatheredSample(t *testing.T, name string, labelWant map[string]string) (bool, float64) {
+	t.Helper()
+	mfs, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		t.Fatalf("gather: %v", err)
+	}
+	for _, mf := range mfs {
+		if mf.GetName() != name {
+			continue
+		}
+		for _, m := range mf.GetMetric() {
+			have := map[string]string{}
+			for _, lp := range m.GetLabel() {
+				have[lp.GetName()] = lp.GetValue()
+			}
+			match := true
+			for k, v := range labelWant {
+				if have[k] != v {
+					match = false
+					break
+				}
+			}
+			if !match {
+				continue
+			}
+			if m.Gauge != nil {
+				return true, m.Gauge.GetValue()
+			}
+			if m.Counter != nil {
+				return true, m.Counter.GetValue()
+			}
+			return true, 0
+		}
+	}
+	return false, 0
+}
+
+// TestLoopHostEnergyPresent verifies that when a window carries host energy, the
+// system J/token and host-energy-fraction metrics are emitted with the right
+// values and the storage record carries the measured joules.
+func TestLoopHostEnergyPresent(t *testing.T) {
+	loop, sink := newTestLoop(nil, PolicyConfig{}, nil)
+	w := baseReport()
+	w.ModelName = "hosttest-present"
+	hostJ := 100.0
+	hostW := 3.3
+	w.HostEnergyJoules = &hostJ
+	w.HostPowerWatts = &hostW
+	w.HostProvider = "rapl"
+
+	if _, err := loop.ReportWindow(context.Background(), w); err != nil {
+		t.Fatal(err)
+	}
+
+	wantSystem := (w.EnergyJoules + hostJ) / float64(w.OutputTokens)
+	found, got := gatheredSample(t, "aitra_system_j_per_token", map[string]string{
+		"model": "hosttest-present", "host_provider": "rapl",
+	})
+	if !found {
+		t.Fatal("aitra_system_j_per_token not emitted when host energy present")
+	}
+	if math.Abs(got-wantSystem) > 1e-9 {
+		t.Fatalf("system J/token = %v, want %v", got, wantSystem)
+	}
+
+	wantFrac := hostJ / (w.EnergyJoules + hostJ)
+	found, got = gatheredSample(t, "aitra_host_energy_fraction", map[string]string{"model": "hosttest-present"})
+	if !found || math.Abs(got-wantFrac) > 1e-9 {
+		t.Fatalf("host_energy_fraction found=%v got=%v want %v", found, got, wantFrac)
+	}
+
+	if rec := sink.last(); rec.HostEnergyJoules == nil || *rec.HostEnergyJoules != hostJ {
+		t.Fatalf("record HostEnergyJoules = %v, want %v", rec.HostEnergyJoules, hostJ)
+	}
+}
+
+// TestLoopHostEnergyAbsentIsNotZero is the test that protects the central
+// contract: a window WITHOUT host energy must not emit aitra_system_j_per_token
+// or aitra_host_energy_fraction at all — not as zero. A zero would make an
+// unmeasured node look more efficient than a measured one.
+func TestLoopHostEnergyAbsentIsNotZero(t *testing.T) {
+	loop, sink := newTestLoop(nil, PolicyConfig{}, nil)
+	w := baseReport()
+	w.ModelName = "hosttest-absent" // no HostEnergyJoules set
+
+	if _, err := loop.ReportWindow(context.Background(), w); err != nil {
+		t.Fatal(err)
+	}
+
+	if found, v := gatheredSample(t, "aitra_system_j_per_token", map[string]string{"model": "hosttest-absent"}); found {
+		t.Fatalf("aitra_system_j_per_token emitted (value %v) for a node without host telemetry — must be absent, never zero", v)
+	}
+	if found, v := gatheredSample(t, "aitra_host_energy_fraction", map[string]string{"model": "hosttest-absent"}); found {
+		t.Fatalf("aitra_host_energy_fraction emitted (value %v) for a node without host telemetry — must be absent", v)
+	}
+	if rec := sink.last(); rec.HostEnergyJoules != nil {
+		t.Fatalf("record HostEnergyJoules = %v, want nil (not measured)", *rec.HostEnergyJoules)
+	}
+	// The GPU-only metric MUST still be present and unchanged.
+	if found, _ := gatheredSample(t, "aitra_j_per_token", map[string]string{"model": "hosttest-absent"}); !found {
+		t.Fatal("aitra_j_per_token must still be emitted (GPU path unaffected by host absence)")
 	}
 }
 
