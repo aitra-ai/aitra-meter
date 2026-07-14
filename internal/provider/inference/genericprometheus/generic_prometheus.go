@@ -44,49 +44,100 @@ type GenericPrometheusProvider struct {
 
 func (g *GenericPrometheusProvider) Name() string { return "generic-prometheus" }
 
+// sample is a single Prometheus series: its raw label set and its value.
+type sample struct {
+	labels string
+	value  float64
+}
+
+// OutputTokens returns cumulative output tokens, summed across every series of
+// the counter.
+//
+// A server that shards a model across GPUs reports one series per shard. SGLang,
+// for example, labels each metric with tp_rank, pp_rank and moe_ep_rank, so a
+// tensor-parallel deployment exposes one counter per rank. The tokens the model
+// generated are the sum over those series; taking any single one undercounts by
+// the parallelism degree and inflates J/token by the same factor.
 func (g *GenericPrometheusProvider) OutputTokens(ctx context.Context) (uint64, error) {
-	m, err := g.scrape(ctx)
+	series, err := g.scrape(ctx)
 	if err != nil {
 		return 0, err
 	}
-	val, ok := m[g.outputTokensMetric]
-	if !ok {
+	samples, ok := series[g.outputTokensMetric]
+	if !ok || len(samples) == 0 {
 		return 0, fmt.Errorf("generic-prometheus: metric %q not found at %s", g.outputTokensMetric, g.endpoint)
 	}
-	return uint64(val), nil
+	var total float64
+	for _, s := range samples {
+		total += s.value
+	}
+	if total < 0 {
+		return 0, fmt.Errorf("generic-prometheus: metric %q summed to a negative value (%v) at %s",
+			g.outputTokensMetric, total, g.endpoint)
+	}
+	return uint64(total), nil
 }
 
+// RequestsRunning returns in-flight requests, summed across series. It feeds
+// idle detection: the server is busy if any shard is busy.
 func (g *GenericPrometheusProvider) RequestsRunning(ctx context.Context) (int, error) {
-	m, err := g.scrape(ctx)
+	series, err := g.scrape(ctx)
 	if err != nil {
 		return 0, err
 	}
-	return int(m[g.requestsRunningMetric]), nil
+	var total float64
+	for _, s := range series[g.requestsRunningMetric] {
+		total += s.value
+	}
+	return int(total), nil
 }
 
+// ModelName returns the model served at the endpoint, read from the model label
+// on the output-token counter.
+//
+// Every series of that counter on a single-model server carries the same model
+// name, so any series is representative. If series disagree, the endpoint is
+// serving more than one model and its energy cannot be attributed to a single
+// one; that is reported rather than silently resolved to whichever series came
+// first.
 func (g *GenericPrometheusProvider) ModelName(ctx context.Context) (string, error) {
-	lines, err := g.rawLines(ctx)
+	series, err := g.scrape(ctx)
 	if err != nil {
 		return "", err
 	}
-	prefix := g.outputTokensMetric + "{"
-	for _, line := range lines {
-		if strings.HasPrefix(line, prefix) {
-			if name := extractLabel(line, g.modelNameLabel); name != "" {
-				return name, nil
-			}
+	found := ""
+	for _, s := range series[g.outputTokensMetric] {
+		name := extractLabel(s.labels, g.modelNameLabel)
+		if name == "" {
+			continue
+		}
+		if found == "" {
+			found = name
+			continue
+		}
+		if name != found {
+			return "", fmt.Errorf("generic-prometheus: metric %q at %s reports multiple values for label %q (%q and %q); "+
+				"energy cannot be attributed to a single model — point the provider at a single-model endpoint",
+				g.outputTokensMetric, g.endpoint, g.modelNameLabel, found, name)
 		}
 	}
-	return "unknown", nil
+	if found == "" {
+		return "unknown", nil
+	}
+	return found, nil
 }
 
-func (g *GenericPrometheusProvider) scrape(ctx context.Context) (map[string]float64, error) {
+// scrape parses the endpoint into metric name -> series, preserving each
+// series' label set. A metric exposed with several label sets yields one entry
+// per series rather than a single collapsed value.
+func (g *GenericPrometheusProvider) scrape(ctx context.Context) (map[string][]sample, error) {
 	lines, err := g.rawLines(ctx)
 	if err != nil {
 		return nil, err
 	}
-	res := map[string]float64{}
+	series := map[string][]sample{}
 	for _, line := range lines {
+		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
@@ -94,15 +145,20 @@ func (g *GenericPrometheusProvider) scrape(ctx context.Context) (map[string]floa
 		if len(parts) < 2 {
 			continue
 		}
-		name := parts[0]
+		name, labels := parts[0], ""
 		if i := strings.Index(name, "{"); i > 0 {
+			if j := strings.LastIndex(name, "}"); j > i {
+				labels = name[i+1 : j]
+			}
 			name = name[:i]
 		}
-		if val, err := strconv.ParseFloat(parts[len(parts)-1], 64); err == nil {
-			res[name] = val
+		val, err := strconv.ParseFloat(parts[len(parts)-1], 64)
+		if err != nil {
+			continue
 		}
+		series[name] = append(series[name], sample{labels: labels, value: val})
 	}
-	return res, nil
+	return series, nil
 }
 
 func (g *GenericPrometheusProvider) rawLines(ctx context.Context) ([]string, error) {
@@ -122,18 +178,19 @@ func (g *GenericPrometheusProvider) rawLines(ctx context.Context) ([]string, err
 	return strings.Split(string(body), "\n"), nil
 }
 
-func extractLabel(line, label string) string {
+// extractLabel pulls one label's value out of a raw label set.
+func extractLabel(labels, label string) string {
 	key := label + `="`
-	idx := strings.Index(line, key)
+	idx := strings.Index(labels, key)
 	if idx < 0 {
 		return ""
 	}
 	start := idx + len(key)
-	end := strings.Index(line[start:], `"`)
+	end := strings.Index(labels[start:], `"`)
 	if end < 0 {
 		return ""
 	}
-	return line[start : start+end]
+	return labels[start : start+end]
 }
 
 func orDefault(v, d string) string {
