@@ -43,7 +43,8 @@ than a component, so it survives non-x86 hardware and board-level paths
 |---|---|---|---|
 | x86 (Intel, AMD) | `rapl` | `/sys/class/powercap/intel-rapl:*/energy_uj` | Supported |
 | Grace Superchip (72-core) | `grace-hwmon` | hwmon `power1_average` / `power1_oem_info` | Supported |
-| GB10 / DGX Spark | — | none | **Unavailable, by design** |
+| GB10 / DGX Spark | `grace-spark-hwmon` | hwmon `energyN_input` via community `antheas/spark_hwmon` | **Experimental — community driver, opt-in** |
+| GB10 / DGX Spark, driver absent | — | none | Unavailable (not zero) |
 | Server-class, any arch | `redfish` | BMC | Future |
 | Default | `none` | Noop (metrics omitted) | Supported |
 
@@ -51,7 +52,7 @@ Configure via Helm:
 
 ```yaml
 hostEnergyProvider:
-  type: rapl   # rapl | grace-hwmon | none
+  type: rapl   # rapl | grace-hwmon | grace-spark-hwmon | none
   config: {}
 ```
 
@@ -100,22 +101,83 @@ the ACPI power meter, hwmon power attributes (`power1_input`, `power1_average`,
 Redfish/IPMI is not an option either).
 
 A community out-of-tree kernel driver (`antheas/spark_hwmon`) reaches the
-MediaTek SSPM firmware's shared memory and does expose cumulative energy counters
-in millijoules through standard hwmon. **Aitra Meter does not take a dependency on
-it.** It is unsigned and out-of-tree, needs DKMS and MOK keys under Secure Boot,
-is self-described by its author as "vibe coded", and its firmware ABI is
-explicitly still in flux. Building a shipped provider on an unstable ABI, or
-asking users to install such a driver, is not a reasonable ask.
+MediaTek SSPM firmware's shared memory and exposes cumulative energy counters in
+millijoules through standard hwmon. **Aitra Meter takes no dependency on it and
+does not ship, install, sign, or version-check it.** It is unsigned and
+out-of-tree, needs DKMS and MOK keys under Secure Boot, is self-described by its
+author as "vibe coded", and its firmware ABI is explicitly still in flux.
 
-On GB10, host energy is `unavailable`, and Aitra Meter says so. That is the
-honest state — and it is a stronger position than silently reporting a wrong
-number.
+So on a **stock** GB10 — no community driver — host energy is `unavailable`, and
+Aitra Meter says so. That is the honest state, and a stronger position than
+silently reporting a wrong number.
 
-> **Sizing the error, separately.** For a one-off *benchmark* (not a shipped
-> path), `antheas/spark_hwmon` can be installed on a GB10 to quantify how large
-> the host share actually is. A measured example on a GB10 (one small–mid model,
-> concurrency 8, eager mode): the GPU drew ≈30 % of total box power, i.e. GPU-only
-> J/token undercounted whole-system energy by ≈3.3×, and — measured across the
-> qwen2.5 0.5B→32B ladder — that ratio was roughly **constant** rather than
-> shrinking with model size. Treat these as hardware- and load-specific: on a
-> datacenter GPU drawing 400–700 W the host share is far smaller.
+For operators who have *chosen* to install that driver, the experimental
+`grace-spark-hwmon` provider (below) will read it. It remains opt-in, and it never
+relaxes the "absent is not zero" rule: a driver that is absent, or a reading that
+is malformed or goes backwards, is reported as unavailable, never as zero.
+
+## `grace-spark-hwmon` (GB10 / DGX Spark) — experimental, opt-in
+
+**Status: experimental, community-dependency, off by default.** Distinct from
+`grace-hwmon` (the 72-core Superchip) because the sysfs surface and the caveats
+differ. Enable only on a GB10 where you have installed the `antheas/spark_hwmon`
+driver yourself.
+
+The driver reads the Spark's System Power Budget Manager (SPBM) shared memory —
+updated by the MediaTek SSPM firmware — and presents it through ordinary hwmon
+sysfs. Aitra reads it exactly as it would read any other hwmon energy source; it
+never touches SPBM, ACPI, or the MediaTek interface directly.
+
+- **Energy source: the accumulator, not the power reading.** The provider reads
+  the cumulative energy counter (`energyN_input`) at window boundaries and
+  differences it — the same pattern as NVML and RAPL. It deliberately does *not*
+  integrate the instantaneous power channel: the firmware's ~100 ms PID control
+  loop makes instantaneous power oscillate, whereas the accumulator already
+  integrates correctly in firmware.
+- **Rail selection.** It sums the rails that constitute host energy — the
+  top-level `package` rail plus a DRAM-equivalent rail if exposed separately —
+  identifying each by its `energyN_label`. Per-core subsets (CPU performance /
+  efficiency cores) are excluded because they are already contained in `package`;
+  including them would double-count. Selection is by label, never by channel
+  index, and is configurable (`config.rails`, `config.exclude`).
+- **Chip discovery.** It walks `/sys/class/hwmon/hwmon*/name` for the chip name
+  the driver registers (configurable via `config.name`, default `spark` — confirm
+  on hardware). No match → unavailable with reason "spark_hwmon driver not loaded".
+- **Wraparound.** hwmon exposes no documented maximum for an energy counter (unlike
+  RAPL's `max_energy_range_uj`), so the wrap width is unknown until confirmed on
+  hardware. A counter that goes **backwards** within a window is reported as
+  unavailable for that window — never a negative and never a wrapped-large value.
+- **Never zero, applied to hwmon.** A read that does not parse as a number is
+  unavailable (guarding hwmon's "non-number reads as 0" hazard); an absent driver
+  is unavailable; a backwards counter is unavailable. Only a clean, monotonic,
+  parseable delta becomes a reading.
+- **Unit.** The accumulator is documented in millijoules; standard hwmon energy is
+  microjoules. Because the ABI is in flux this is configurable — `config.energy_unit`
+  is `mj` (default) or `uj` — so the scale can be corrected without a rebuild.
+- **Firmware correctness — operator's responsibility.** Older firmware reports
+  incorrect values on the CPU power channels; the fix is a BIOS update via `fwupd`.
+  The provider *cannot* detect stale firmware. Readings from this path carry the
+  metric label `provider="grace-spark-hwmon"` so an operator can segregate
+  experimental-path data from `rapl` / `grace-hwmon` in Prometheus.
+
+What this provider does **not** do: it does not bundle or manage the driver; it
+does not touch the driver's writable `power_cap` / PL1 / PL2 controls (those are
+mutations — clock/power capping — and belong behind the measure/decide/enforce
+boundary in Aitra Policy, exactly as DVFS does); and it does not promote GB10 host
+energy to a supported tier.
+
+```yaml
+hostEnergyProvider:
+  type: grace-spark-hwmon   # EXPERIMENTAL — GB10 only, requires the community driver
+  config: {}                # optional: name, rails, exclude, energy_unit, path
+```
+
+> **Sizing the error, separately.** Even with this provider available, the primary
+> use of the Spark driver should be a one-off *benchmark* to quantify how wrong
+> GPU-only J/token is on this hardware — not a standing production dependency. A
+> measured example on a GB10 (one small–mid model, concurrency 8, eager mode): the
+> GPU drew ≈30 % of total box power, i.e. GPU-only J/token undercounted
+> whole-system energy by ≈3.3×, and — measured across the qwen2.5 0.5B→32B ladder
+> — that ratio was roughly **constant** rather than shrinking with model size.
+> Treat these as hardware- and load-specific: on a datacenter GPU drawing
+> 400–700 W the host share is far smaller.

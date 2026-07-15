@@ -46,14 +46,23 @@ measurementAgent:
   # aitra_j_per_token measures GPU energy only. With a host provider configured,
   # aitra_system_j_per_token reports total system energy per token.
   #
-  #   rapl         x86 (Intel and AMD). Reads /sys/class/powercap.
-  #   grace-hwmon  Grace Superchip (72-core). Reads hwmon power rails.
-  #   none         No host measurement. Host metrics are omitted, not zeroed.
+  #   rapl               x86 (Intel and AMD). Reads /sys/class/powercap.
+  #   grace-hwmon        Grace Superchip (72-core). Reads hwmon power rails.
+  #   grace-spark-hwmon  EXPERIMENTAL. NVIDIA GB10 / DGX Spark only. Reads the
+  #                      cumulative energy accumulator exposed by the community
+  #                      antheas/spark_hwmon kernel driver. Aitra does NOT install,
+  #                      sign, or manage that driver — the operator must install it
+  #                      (DKMS + MOK under Secure Boot) and keep firmware current.
+  #                      Driver absent -> host metrics are omitted (never zeroed).
+  #                      Readings carry provider="grace-spark-hwmon" so they can be
+  #                      told apart from the supported rapl / grace-hwmon paths.
+  #   none               No host measurement. Host metrics are omitted, not zeroed.
   #
-  # Not available on all hardware. NVIDIA GB10 / DGX Spark exposes no host power
-  # telemetry, so host metrics are omitted there. This is reported as unavailable
-  # and never as zero: a zero would make an unmeasured node look more efficient
-  # than a measured one. See docs/guides/host-energy.md.
+  # Not available on all hardware. On a stock NVIDIA GB10 / DGX Spark (no community
+  # driver) there is no host power telemetry, so host metrics are omitted there.
+  # Absence is always reported as unavailable and never as zero: a zero would make
+  # an unmeasured node look more efficient than a measured one. See
+  # docs/guides/host-energy.md.
   hostEnergyProvider:
     type: none
     config: {}

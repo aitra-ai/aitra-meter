@@ -308,15 +308,18 @@ Metrics are exposed at:
 Host energy is everything on the node that is **not** the accelerator: CPU
 package, DRAM, and — depending on the provider — the wider board (NICs, storage,
 fans, PSU losses). It is measured per node by a host-energy provider (`rapl` on
-x86, `grace-hwmon` on the Grace Superchip); see the
-[host energy guide](../guides/host-energy.md).
+x86, `grace-hwmon` on the Grace Superchip, and the experimental opt-in
+`grace-spark-hwmon` on GB10 / DGX Spark via a community driver); see the
+[host energy guide](../guides/host-energy.md). The `provider` label distinguishes
+these paths so experimental-path data is segregable in Prometheus.
 
 > **Absent is not zero.** Every metric in this section is **omitted entirely** on
 > nodes without host telemetry — it is never emitted as `0`. A zero would
 > understate whole-node efficiency and make an *unmeasured* node look **more
 > efficient** than a measured one, so the two would be incomparable and the more
-> honest node would look worse. On GB10 / DGX Spark, which exposes no host power
-> telemetry, these metrics do not exist.
+> honest node would look worse. On a stock GB10 / DGX Spark, which exposes no host
+> power telemetry, these metrics do not exist — unless the operator has opted into
+> the experimental `grace-spark-hwmon` community-driver path.
 
 ### `aitra_host_energy_joules_total`
 
@@ -327,7 +330,7 @@ x86, `grace-hwmon` on the Grace Superchip); see the
 | Label | Description |
 |---|---|
 | `node` | Kubernetes node name |
-| `provider` | Host energy provider: `rapl`, `grace-hwmon` |
+| `provider` | Host energy provider: `rapl`, `grace-hwmon`, `grace-spark-hwmon` (experimental) |
 | `domain` | Energy domain (`all` for the summed node total) |
 
 ---
@@ -341,7 +344,7 @@ x86, `grace-hwmon` on the Grace Superchip); see the
 | Label | Description |
 |---|---|
 | `node` | Kubernetes node name |
-| `provider` | Host energy provider: `rapl`, `grace-hwmon` |
+| `provider` | Host energy provider: `rapl`, `grace-hwmon`, `grace-spark-hwmon` (experimental) |
 
 ---
 

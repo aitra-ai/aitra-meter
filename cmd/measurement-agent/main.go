@@ -18,6 +18,7 @@ import (
 	_ "github.com/aitra-ai/aitra-meter/internal/provider/energy/dcgm"
 	_ "github.com/aitra-ai/aitra-meter/internal/provider/energy/zeus"
 	_ "github.com/aitra-ai/aitra-meter/internal/provider/hostenergy/gracehwmon"
+	_ "github.com/aitra-ai/aitra-meter/internal/provider/hostenergy/gracespark"
 	_ "github.com/aitra-ai/aitra-meter/internal/provider/hostenergy/rapl"
 	_ "github.com/aitra-ai/aitra-meter/internal/provider/inference/genericprometheus"
 	_ "github.com/aitra-ai/aitra-meter/internal/provider/inference/vllm"
@@ -25,7 +26,7 @@ import (
 
 func main() {
 	energyType := flag.String("energy-provider", "nvml", "Energy provider: nvml | amd | zeus | dcgm")
-	hostEnergyType := flag.String("host-energy-provider", "none", "Host (non-accelerator) energy provider: none | rapl | grace-hwmon")
+	hostEnergyType := flag.String("host-energy-provider", "none", "Host (non-accelerator) energy provider: none | rapl | grace-hwmon | grace-spark-hwmon (experimental)")
 	inferenceType := flag.String("inference-provider", "vllm", "Inference provider: vllm | generic-prometheus")
 	aggregatorAddr := flag.String("aggregator", "aitra-meter-aggregation:9091", "Aggregation service gRPC address")
 	nodeName := flag.String("node", "", "Kubernetes node name (defaults to NODE_NAME env var)")

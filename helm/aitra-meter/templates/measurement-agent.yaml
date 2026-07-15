@@ -94,7 +94,8 @@ spec:
             periodSeconds: 10
           {{- end }}
           {{- $rapl := eq .Values.measurementAgent.hostEnergyProvider.type "rapl" }}
-          {{- if or .Values.measurementAgent.nvml.hostLibraryPath $rapl }}
+          {{- $hwmon := or (eq .Values.measurementAgent.hostEnergyProvider.type "grace-hwmon") (eq .Values.measurementAgent.hostEnergyProvider.type "grace-spark-hwmon") }}
+          {{- if or .Values.measurementAgent.nvml.hostLibraryPath $rapl $hwmon }}
           volumeMounts:
             {{- if .Values.measurementAgent.nvml.hostLibraryPath }}
             - name: nvml-lib
@@ -108,8 +109,16 @@ spec:
               mountPath: /sys/class/powercap
               readOnly: true
             {{- end }}
+            {{- if $hwmon }}
+            # grace-hwmon / grace-spark-hwmon read /sys/class/hwmon. Mounted
+            # explicitly so the power rails / energy accumulators are visible in the
+            # pod rather than relying on the default /sys mount.
+            - name: hwmon
+              mountPath: /sys/class/hwmon
+              readOnly: true
+            {{- end }}
           {{- end }}
-      {{- if or .Values.measurementAgent.nvml.hostLibraryPath $rapl }}
+      {{- if or .Values.measurementAgent.nvml.hostLibraryPath $rapl $hwmon }}
       volumes:
         {{- if .Values.measurementAgent.nvml.hostLibraryPath }}
         - name: nvml-lib
@@ -121,6 +130,12 @@ spec:
         - name: powercap
           hostPath:
             path: /sys/class/powercap
+            type: Directory
+        {{- end }}
+        {{- if $hwmon }}
+        - name: hwmon
+          hostPath:
+            path: /sys/class/hwmon
             type: Directory
         {{- end }}
       {{- end }}
