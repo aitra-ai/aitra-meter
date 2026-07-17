@@ -17,7 +17,7 @@
 | Generic Prometheus | `generic-prometheus` | TGI, SGLang, Ollama, Triton, any custom server | Configure metric names via `config` map. Works with any server exposing Prometheus metrics. |
 | TGI | `tgi` (community) | HuggingFace Text Generation Inference | Dedicated adapter with TGI-specific metric names pre-configured |
 | SGLang | `sglang` (community) | SGLang | Dedicated adapter |
-| Ollama | `ollama` (community) | Ollama | Dedicated adapter |
+| Ollama | `ollama` | Ollama | Built-in adapter. Reads token/request counters from Ollama's Prometheus `/metrics`, and the served model name from Ollama's native `/api/ps` |
 | Triton | `triton` (community) | NVIDIA Triton Inference Server | Dedicated adapter |
 
 ## Using `generic-prometheus` for TGI
@@ -47,6 +47,31 @@ measurementAgent:
       requests_running_metric: "sglang:num_running_reqs"
       model_name_label: "model_name"
 ```
+
+## Using the dedicated `ollama` provider
+
+Ollama has a built-in adapter. It reads token and request counters from Ollama's
+Prometheus `/metrics` endpoint and resolves the served model name from Ollama's
+native `/api/ps` endpoint (available on every Ollama build), so no
+`model_name_label` is needed:
+
+```yaml
+measurementAgent:
+  inferenceProvider:
+    type: ollama
+    config:
+      endpoint: "http://localhost:11434/metrics"   # Prometheus metrics (default)
+      api_base: "http://localhost:11434"            # native API for /api/ps (default)
+      # Overridable if your build/exporter uses different names:
+      # output_tokens_metric: "ollama_completion_tokens_total"
+      # requests_running_metric: "ollama_requests_active"
+```
+
+> **Note:** Token and request metrics require an Ollama build (or exporter
+> sidecar) that exposes a Prometheus `/metrics` endpoint. Ollama releases
+> without `/metrics` will error on `OutputTokens`; the model name from
+> `/api/ps` still works. For servers with different metric names, the
+> `generic-prometheus` provider below remains available.
 
 ## Using `generic-prometheus` for Ollama
 

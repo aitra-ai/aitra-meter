@@ -49,6 +49,12 @@ measurementAgent:
     type: vllm
     config:
       endpoint: "http://localhost:8000/metrics"
+  # ollama example (dedicated adapter; model name resolved via Ollama's /api/ps):
+  # inferenceProvider:
+  #   type: ollama
+  #   config:
+  #     endpoint: "http://localhost:11434/metrics"
+  #     api_base: "http://localhost:11434"
   # generic-prometheus example (works with TGI, SGLang, Ollama, Triton, any custom server):
   # inferenceProvider:
   #   type: generic-prometheus
