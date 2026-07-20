@@ -6,7 +6,7 @@
 # tag and compiles to a stub in this image; ROCm nodes need an image built
 # with `--build-arg BUILD_TAGS=amd` and CGO_ENABLED=1 against the AMD SMI
 # headers.
-FROM golang:1.25-bookworm AS builder
+FROM golang:1.26-bookworm AS builder
 WORKDIR /src
 
 COPY go.mod go.sum ./
