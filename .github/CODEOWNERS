@@ -1,12 +1,12 @@
 # Default owners for everything
-*  @stevenphtan
+*  @skdwriting
 
 # Helm chart
-/helm/  @stevenphtan
+/helm/  @skdwriting
 
 # Go core
-/internal/  @stevenphtan
-/cmd/       @stevenphtan
+/internal/  @skdwriting
+/cmd/       @skdwriting
 
 # Docs
-/docs/  @stevenphtan
+/docs/  @skdwriting

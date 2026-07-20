@@ -1,0 +1,138 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.0.0" },
+    { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" }
+  ],
+  "title": "Aitra Meter — Hardware Efficiency Comparison",
+  "uid": "aitra-hardware-efficiency",
+  "description": "Cross-hardware J/token comparison for capacity planning: relative J/token and cost/1M tokens across GPU types for the same model under comparable load. Only meaningful when more than one hardware label value is reporting.",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "30s",
+  "tags": ["aitra", "ai", "inference", "energy", "hardware"],
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROMETHEUS",
+        "label": "Prometheus",
+        "type": "datasource",
+        "query": "prometheus",
+        "hide": 0
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "How to read this dashboard",
+      "type": "text",
+      "gridPos": { "x": 0, "y": 0, "w": 16, "h": 5 },
+      "options": {
+        "mode": "markdown",
+        "content": "This dashboard compares **J/token across GPU hardware types** for the same model. It requires more than one distinct `hardware` label value to be meaningful.\n\n- If **Hardware types reporting** (right) shows **1**, your cluster runs a single GPU type — the panels below will show only that type and no comparison is possible. Deploy the same model on a second GPU type to populate the comparison.\n- The efficiency-ratio panel uses `hardware=\"h100\"` as the baseline. If no H100 is present it stays empty; edit the panel query to pick a baseline that exists in your cluster.\n- Comparisons are only fair under comparable load: same model, similar batch sizes and request mix. Check `aitra_measurement_cv` before trusting a number."
+      }
+    },
+    {
+      "id": 2,
+      "title": "Hardware types reporting",
+      "description": "Count of distinct hardware label values currently reporting aitra_j_per_token. Below 2 (red), the comparison panels are not meaningful.",
+      "type": "stat",
+      "gridPos": { "x": 16, "y": 0, "w": 8, "h": 5 },
+      "targets": [
+        {
+          "datasource": "${DS_PROMETHEUS}",
+          "expr": "count(count by (hardware) (aitra_j_per_token))",
+          "legendFormat": "hardware types",
+          "refId": "A"
+        }
+      ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 2 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "J/token by hardware × model",
+      "description": "Average J/token grouped by hardware and model. Lower is better.",
+      "type": "barchart",
+      "gridPos": { "x": 0, "y": 5, "w": 12, "h": 9 },
+      "targets": [
+        {
+          "datasource": "${DS_PROMETHEUS}",
+          "expr": "avg by (hardware, model) (aitra_j_per_token)",
+          "legendFormat": "{{model}} on {{hardware}}",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "joule" } }
+    },
+    {
+      "id": 4,
+      "title": "Cost per 1M tokens by hardware × model",
+      "description": "Average energy cost (USD) per million output tokens grouped by hardware and model. Lower is better.",
+      "type": "barchart",
+      "gridPos": { "x": 12, "y": 5, "w": 12, "h": 9 },
+      "targets": [
+        {
+          "datasource": "${DS_PROMETHEUS}",
+          "expr": "avg by (hardware, model) (aitra_cost_per_million_tokens_usd)",
+          "legendFormat": "{{model}} on {{hardware}}",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" } }
+    },
+    {
+      "id": 5,
+      "title": "Efficiency ratio vs H100 baseline",
+      "description": "Per-model ratio: H100 J/token divided by J/token on other hardware (h200, b200, l40s). A value above 1 means the other hardware produces the same tokens for less energy than H100. Empty when no H100 series or no second hardware type is present — see the instructions panel.",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 14, "w": 24, "h": 6 },
+      "targets": [
+        {
+          "datasource": "${DS_PROMETHEUS}",
+          "expr": "avg by (model) (aitra_j_per_token{hardware=\"h100\"}) / on (model) group_right () avg by (model, hardware) (aitra_j_per_token{hardware=~\"h200|b200|l40s\"})",
+          "legendFormat": "h100 vs {{hardware}} — {{model}}",
+          "refId": "A"
+        }
+      ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

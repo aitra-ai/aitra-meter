@@ -8,7 +8,8 @@ cluster:
 measurementAgent:
   image:
     repository: ghcr.io/aitra-ai/aitra-meter/measurement-agent
-    tag: "0.1.0"
+    # Defaults to the chart appVersion. Override only to pin a specific image.
+    tag: ""
     pullPolicy: IfNotPresent
   # Node selector — DaemonSet only schedules to nodes with this label
   nodeSelector:
@@ -63,7 +64,8 @@ measurementAgent:
 aggregationService:
   image:
     repository: ghcr.io/aitra-ai/aitra-meter/aggregation-service
-    tag: "0.1.0"
+    # Defaults to the chart appVersion. Override only to pin a specific image.
+    tag: ""
     pullPolicy: IfNotPresent
   replicas: 1
   resources:
@@ -75,11 +77,18 @@ aggregationService:
       memory: 512Mi
   port: 8080
 
+# Standalone dashboard — a self-contained Next.js UI served from its own image.
+#
+# Off by default. Aitra Meter writes plain Prometheus metrics, and most clusters
+# already run Grafana; the provisioned Grafana dashboards below are the primary
+# surface and require no extra image, no extra Deployment, and no second place to
+# look. Enable this only if you want a standalone view independent of Grafana.
 dashboard:
-  enabled: true
+  enabled: false
   image:
     repository: ghcr.io/aitra-ai/aitra-meter/dashboard
-    tag: "0.1.0"
+    # Defaults to the chart appVersion. Override only to pin a specific image.
+    tag: ""
     pullPolicy: IfNotPresent
   replicas: 1
   port: 3000
@@ -94,6 +103,26 @@ prometheus:
     namespace: monitoring
     interval: 15s
     scrapeTimeout: 10s
+
+# Grafana dashboard provisioning — the default surface for Aitra Meter's metrics.
+#
+# All dashboard JSON files in files/ (overview, cost attribution, AI efficiency,
+# hardware efficiency) are rendered into a ConfigMap labelled for the Grafana
+# dashboard sidecar (kube-prometheus-stack ships it by default), so the
+# dashboards appear in Grafana without a manual import step.
+#
+# This requires a Grafana with the dashboard sidecar running in the cluster. If
+# you do not run Grafana, set this to false and enable the standalone dashboard
+# above instead.
+grafana:
+  enabled: true
+  # Label key/value the Grafana sidecar watches for on dashboard ConfigMaps.
+  # kube-prometheus-stack default: grafana_dashboard=1.
+  sidecarLabel: grafana_dashboard
+  sidecarLabelValue: "1"
+  # Optional Grafana folder for the provisioned dashboards (grafana_folder
+  # annotation, honoured by the sidecar). Empty = Grafana default folder.
+  folder: ""
 
 # Storage backend — SQLite by default (embedded, no infrastructure required).
 storage:

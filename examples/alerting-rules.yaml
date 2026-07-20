@@ -93,3 +93,15 @@ spec:
               energy in the last 24h — over its configured budget. Set budgets via the
               chart `costBudgets` value (docs/guides/cost-budgets.md).
             runbook_url: "https://github.com/aitra-ai/aitra-meter/blob/main/docs/runbooks/tenant-budget.md"
+
+    # Recording rules for the OpenCost integration (docs/guides/opencost-integration.md).
+    # Best-effort join: OpenCost and Aitra Meter both label by `namespace`, so the
+    # join is direct. The ratio is only meaningful when OpenCost is configured with
+    # GPU node pricing (node_gpu_hourly_cost present).
+    - name: aitra-meter-opencost
+      rules:
+        - record: aitra:opencost_cost_per_token_ratio
+          expr: |
+            sum by (namespace) (container_gpu_allocation * on(node) group_left() node_gpu_hourly_cost)
+            /
+            sum by (namespace) (rate(aitra_model_tokens_total[1h]) * 3600)

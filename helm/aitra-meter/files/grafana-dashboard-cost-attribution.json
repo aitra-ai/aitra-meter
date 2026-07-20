@@ -1,0 +1,138 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.0.0" },
+    { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" }
+  ],
+  "title": "Aitra Meter — Cost Attribution",
+  "uid": "aitra-cost-attribution",
+  "description": "Energy cost attribution for FinOps: cost by model, namespace/tenant, and cluster, plus a chargeback table. All costs are energy costs derived from measured J/token and the configured electricity price — not hardware amortisation.",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "30s",
+  "tags": ["aitra", "ai", "inference", "cost", "finops"],
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROMETHEUS",
+        "label": "Prometheus",
+        "type": "datasource",
+        "query": "prometheus",
+        "hide": 0
+      },
+      {
+        "name": "cost_per_kwh",
+        "label": "Electricity cost (USD/kWh)",
+        "description": "Set to match siteConfig.electricityCostPerKwh (Helm default: 0.12).",
+        "type": "textbox",
+        "query": "0.12",
+        "current": { "text": "0.12", "value": "0.12" },
+        "hide": 0
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Cost by model",
+      "description": "USD per million output tokens (energy cost only), per model x hardware.",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "datasource": "${DS_PROMETHEUS}",
+          "expr": "aitra_cost_per_million_tokens_usd",
+          "legendFormat": "{{model}} ({{hardware}}) — {{namespace}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" } }
+    },
+    {
+      "id": 2,
+      "title": "Cost by namespace / tenant",
+      "description": "Energy cost (USD) accrued per namespace over the selected dashboard time range.",
+      "type": "barchart",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "datasource": "${DS_PROMETHEUS}",
+          "expr": "sum by (namespace) (increase(aitra_tenant_cost_usd_total[$__range]))",
+          "legendFormat": "{{namespace}}",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" } }
+    },
+    {
+      "id": 3,
+      "title": "Cluster energy cost per 1M tokens",
+      "description": "aitra_cluster_j_per_token converted to USD per million tokens: J/token / 3.6e6 J/kWh x $cost_per_kwh x 1e6. Adjust the cost_per_kwh dashboard variable to match your site.",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 4 },
+      "targets": [
+        {
+          "datasource": "${DS_PROMETHEUS}",
+          "expr": "aitra_cluster_j_per_token * $cost_per_kwh / 3.6",
+          "legendFormat": "{{cluster}}",
+          "refId": "A"
+        }
+      ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": { "defaults": { "unit": "currencyUSD", "decimals": 2 } }
+    },
+    {
+      "id": 4,
+      "title": "Cost per 1M tokens (current)",
+      "description": "Latest aitra_cost_per_million_tokens_usd per model x hardware, priced by the aggregation service from SiteConfig.",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 4 },
+      "targets": [
+        {
+          "datasource": "${DS_PROMETHEUS}",
+          "expr": "aitra_cost_per_million_tokens_usd",
+          "legendFormat": "{{model}} ({{hardware}})",
+          "refId": "A"
+        }
+      ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": { "defaults": { "unit": "currencyUSD", "decimals": 2 } }
+    },
+    {
+      "id": 5,
+      "title": "Chargeback table",
+      "description": "Cumulative energy cost (USD) attributed per tenant, broken down by namespace, team, and cost_center labels.",
+      "type": "table",
+      "gridPos": { "x": 0, "y": 12, "w": 24, "h": 8 },
+      "targets": [
+        {
+          "datasource": "${DS_PROMETHEUS}",
+          "expr": "sum by (namespace, team, cost_center) (aitra_tenant_cost_usd_total)",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Time": true },
+            "renameByName": { "Value": "Cost (USD, cumulative)" }
+          }
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" } }
+    }
+  ]
+}
