@@ -29,6 +29,16 @@ type EnergyProvider interface {
 	Name() string
 }
 
+// PerDeviceEnergy is an optional capability for energy providers that can
+// attribute cumulative energy to individual devices. Per-model measurement
+// agents require it: they map pods to the devices they hold and difference
+// the per-device counters across a window. The dcgm provider implements it.
+type PerDeviceEnergy interface {
+	// DeviceEnergyJoules returns cumulative energy per device in joules,
+	// keyed by the device ID (GPU UUID when available).
+	DeviceEnergyJoules(ctx context.Context) (map[string]float64, error)
+}
+
 // InferenceMetricsProvider is the interface that inference server adapters must implement.
 // The default implementation reads vLLM's Prometheus /metrics endpoint.
 // Any inference server exposing token counts and request state can implement this.

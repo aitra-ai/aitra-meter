@@ -75,8 +75,11 @@ func (c *CVTracker) StdDev() float64 {
 	mean := c.Mean()
 	// Var(X) = E[X²] - (E[X])²
 	variance := (c.sumSq/float64(c.count)) - (mean * mean)
-	if variance < 0 {
-		// Guard against floating-point rounding below zero.
+	if variance < 1e-12*mean*mean {
+		// Guard against floating-point rounding: for near-constant samples the
+		// subtraction leaves a tiny residual (negative or positive — on arm64
+		// FMA fusion produces one even for identical samples). Anything below
+		// a relative epsilon is indistinguishable from zero variance.
 		variance = 0
 	}
 	return math.Sqrt(variance)

@@ -10,6 +10,7 @@ import (
 
 	measurementv1 "github.com/aitra-ai/aitra-meter/api/proto/measurement/v1"
 	"github.com/aitra-ai/aitra-meter/internal/metrics"
+	"github.com/aitra-ai/aitra-meter/internal/model"
 )
 
 // --- stubs ------------------------------------------------------------------
@@ -224,7 +225,8 @@ func TestLoopIdleWindowTracking(t *testing.T) {
 	loop, sink := newTestLoop(map[string]PodMeta{}, PolicyConfig{}, nil)
 	w := baseReport()
 	w.Node = node
-	w.OutputTokens = 0 // idle
+	w.ModelName = "" // whole-node idle: no model holds the GPUs
+	w.OutputTokens = 0
 	w.PowerWatts = 95.0
 	ack, err := loop.ReportWindow(context.Background(), w)
 	if err != nil {
@@ -244,6 +246,77 @@ func TestLoopIdleWindowTracking(t *testing.T) {
 	}
 	if got := testutil.ToFloat64(metrics.IdleTimeRatio.WithLabelValues(node)); got != 1 {
 		t.Errorf("idle_time_ratio = %v, want 1 after one idle window", got)
+	}
+}
+
+// TestLoopQuietModelWindow checks a zero-token window from a model pod keeps
+// its power under the model's own series — the pod holds those GPUs, so this
+// is not node idle power.
+func TestLoopQuietModelWindow(t *testing.T) {
+	const node = "quiet-node"
+	loop, sink := newTestLoop(map[string]PodMeta{}, PolicyConfig{}, nil)
+	w := baseReport()
+	w.Node = node
+	w.OutputTokens = 0 // loaded but quiet
+	w.PowerWatts = 210.0
+	ack, err := loop.ReportWindow(context.Background(), w)
+	if err != nil {
+		t.Fatalf("ReportWindow: %v", err)
+	}
+	if ack.Accepted {
+		t.Error("quiet window Accepted = true, want false")
+	}
+	if sink.len() != 0 {
+		t.Errorf("quiet window wrote %d records, want 0", sink.len())
+	}
+	if got := testutil.ToFloat64(metrics.GPUPowerWatts.WithLabelValues(node, w.ModelName)); got != 210.0 {
+		t.Errorf("gpu_power{model} = %v, want 210", got)
+	}
+	if got := testutil.ToFloat64(metrics.IdlePowerWatts.WithLabelValues(node)); got != 0 {
+		t.Errorf("idle_power_watts = %v, want 0 (pod holds the GPUs)", got)
+	}
+}
+
+// TestLoopResidualWindow checks a residual report (energy of GPUs no pod
+// holds, sent by per-model agents) is recorded as true idle power under the
+// "idle" power series, is never stored as a measurement, and does not count
+// toward the serving/idle time ratios (it is not a model window).
+func TestLoopResidualWindow(t *testing.T) {
+	const node = "residual-node"
+	loop, sink := newTestLoop(map[string]PodMeta{}, PolicyConfig{}, nil)
+
+	// A serving window first, so the ratios have defined values the residual
+	// report must not disturb.
+	w := baseReport()
+	w.Node = node
+	if _, err := loop.ReportWindow(context.Background(), w); err != nil {
+		t.Fatalf("ReportWindow(serving): %v", err)
+	}
+	servingBefore := testutil.ToFloat64(metrics.GPUServingUtilizationRatio.WithLabelValues(node))
+
+	r := baseReport()
+	r.Node = node
+	r.ModelName = model.ResidualModelName
+	r.OutputTokens = 0
+	r.PowerWatts = 88.0
+	ack, err := loop.ReportWindow(context.Background(), r)
+	if err != nil {
+		t.Fatalf("ReportWindow(residual): %v", err)
+	}
+	if ack.Accepted {
+		t.Error("residual window Accepted = true, want false")
+	}
+	if sink.len() != 1 {
+		t.Errorf("store has %d records, want 1 (serving only — residual never stored)", sink.len())
+	}
+	if got := testutil.ToFloat64(metrics.IdlePowerWatts.WithLabelValues(node)); got != 88.0 {
+		t.Errorf("idle_power_watts = %v, want 88", got)
+	}
+	if got := testutil.ToFloat64(metrics.GPUPowerWatts.WithLabelValues(node, "idle")); got != 88.0 {
+		t.Errorf(`gpu_power{model="idle"} = %v, want 88`, got)
+	}
+	if got := testutil.ToFloat64(metrics.GPUServingUtilizationRatio.WithLabelValues(node)); got != servingBefore {
+		t.Errorf("serving ratio changed by residual report: %v → %v", servingBefore, got)
 	}
 }
 

@@ -22,6 +22,9 @@ spec:
     metadata:
       labels:
         app: vllm-demo
+        # Lets the aggregation service pin windows for this model to this pod
+        # (namespace attribution) on nodes running several models at once.
+        aitra-ai.github.io/model-name: qwen2.5-0.5b
     spec:
       initContainers:
         - name: fetch-model
