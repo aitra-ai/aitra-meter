@@ -1,0 +1,78 @@
+# Steady baseline load for the Demo A fleet: one background request loop per
+# model, chat-shaped balanced prompts, fixed pacing — enough to keep every
+# per-model J/token tile live through each 30s measurement window.
+#
+# This is the always-on trickle. For demo-shaped sweeps (concurrency steps,
+# prompt-shape contrast) run `vllm bench serve` lab-side per the demo runbook.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vllm-fleet-loadgen-script
+  namespace: aitra-system
+data:
+  loadgen.sh: |
+    #!/bin/sh
+    # service-name:served-model-name pairs, one loop per model
+    MODELS="vllm-72b:qwen2.5-72b-awq vllm-32b:qwen2.5-32b-awq vllm-14b:qwen2.5-14b vllm-7b:qwen2.5-7b vllm-coder-7b:qwen2.5-coder-7b vllm-math-7b:qwen2.5-math-7b vllm-3b:qwen2.5-3b vllm-1p5b:qwen2.5-1.5b"
+    PROMPTS='What is GPU energy efficiency and why does it matter?|Explain joules per token to a datacenter operator.|Summarize how tensor parallelism affects energy use.|Why should inference clusters measure energy per request?|Describe what idle GPU power means for cost.|Compare batching strategies for LLM serving efficiency.'
+    NPROMPTS=6
+
+    run_model() {
+      SVC="$1"; MODEL="$2"
+      BASE="http://$SVC.aitra-system:8000"
+      echo "[$MODEL] waiting for $BASE/health ..."
+      until curl -sf "$BASE/health" >/dev/null 2>&1; do sleep 10; done
+      echo "[$MODEL] ready — generating load"
+      i=0
+      while true; do
+        i=$(( (i % NPROMPTS) + 1 ))
+        P=$(echo "$PROMPTS" | tr '|' '\n' | sed -n "${i}p")
+        curl -s -o /dev/null --max-time 120 -X POST "$BASE/v1/completions" \
+          -H 'Content-Type: application/json' \
+          -d "{\"model\":\"$MODEL\",\"prompt\":\"$P\",\"max_tokens\":128,\"temperature\":0.7}"
+        sleep 2
+      done
+    }
+
+    for pair in $MODELS; do
+      run_model "${pair%%:*}" "${pair#*:}" &
+    done
+    wait
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-fleet-loadgen
+  namespace: aitra-system
+  labels:
+    app: vllm-fleet-loadgen
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-fleet-loadgen
+  template:
+    metadata:
+      labels:
+        app: vllm-fleet-loadgen
+    spec:
+      containers:
+        - name: loadgen
+          image: curlimages/curl:8.11.1
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "/opt/loadgen/loadgen.sh"]
+          volumeMounts:
+            - name: script
+              mountPath: /opt/loadgen
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 128Mi
+      volumes:
+        - name: script
+          configMap:
+            name: vllm-fleet-loadgen-script
+            defaultMode: 0555

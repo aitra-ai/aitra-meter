@@ -1,0 +1,875 @@
+# Demo A fleet — 8 vLLM models, one per H100, for per-model energy attribution.
+# (KubeCon Japan demo; see docs in the demo runbook.)
+#
+# Pattern follows vllm-demo.yaml: an initContainer curl-downloads the model
+# from hf-mirror into a host-path dir (survives restarts), vLLM loads it
+# OFFLINE. The shared download script (ConfigMap vllm-fetch-script) handles
+# both single-file and sharded safetensors repos.
+#
+# Model spread (per demo brief, pending final V1 confirmation):
+#   large: 72B-AWQ, 32B-AWQ   mid: 14B, 7B, coder-7B, math-7B   small: 3B, 1.5B
+# All AWQ variants fit a single 80GB H100. Every pod requests exactly 1 GPU,
+# so the per-model measurement agent attributes exactly that GPU's energy.
+#
+# NOTE: download the large models well before the demo (72B-AWQ ≈ 41 GB).
+# Apply, then watch: kubectl -n aitra-system get pods -l tier=vllm-fleet -w
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vllm-fetch-script
+  namespace: aitra-system
+data:
+  fetch.sh: |
+    #!/bin/sh
+    # Downloads $MODEL_REPO from hf-mirror into /models/$MODEL_DIR.
+    # Handles sharded (model.safetensors.index.json) and single-file repos.
+    set -e
+    D="/models/$MODEL_DIR"
+    BASE="https://hf-mirror.com/$MODEL_REPO/resolve/main"
+    mkdir -p "$D"
+    fetch() {
+      f="$1"; req="$2"
+      if [ -s "$D/$f" ]; then echo "have $f"; return 0; fi
+      n=0
+      until curl -fSL --max-time 1800 -o "$D/$f.part" "$BASE/$f"; do
+        n=$((n+1))
+        if [ "$n" -ge 15 ]; then
+          [ "$req" = "optional" ] && { echo "skip optional $f"; rm -f "$D/$f.part"; return 0; }
+          echo "FAILED $f after 15 tries"; exit 1
+        fi
+        echo "retry $f ($n)"; sleep 5
+      done
+      mv "$D/$f.part" "$D/$f"; echo "got $f"
+    }
+    for f in config.json generation_config.json tokenizer_config.json tokenizer.json; do
+      fetch "$f" required
+    done
+    for f in merges.txt vocab.json; do
+      fetch "$f" optional
+    done
+    if curl -fsL --max-time 120 -o "$D/model.safetensors.index.json" "$BASE/model.safetensors.index.json"; then
+      echo "sharded repo"
+      for s in $(grep -o '"[^"]*\.safetensors"' "$D/model.safetensors.index.json" | tr -d '"' | sort -u); do
+        fetch "$s" required
+      done
+    else
+      rm -f "$D/model.safetensors.index.json"
+      fetch model.safetensors required
+    fi
+    echo "model ready:"; ls -la "$D"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-72b
+  namespace: aitra-system
+  labels:
+    app: vllm-72b
+    tier: vllm-fleet
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-72b
+  template:
+    metadata:
+      labels:
+        app: vllm-72b
+        tier: vllm-fleet
+        aitra-ai.github.io/model-name: qwen2.5-72b-awq
+    spec:
+      initContainers:
+        - name: fetch-model
+          image: curlimages/curl:8.11.1
+          securityContext:
+            runAsUser: 0   # write to the root-owned host-path model dir
+          command: ["/bin/sh", "/opt/fetch/fetch.sh"]
+          env:
+            - name: MODEL_REPO
+              value: "Qwen/Qwen2.5-72B-Instruct-AWQ"
+            - name: MODEL_DIR
+              value: "vllm-72b"
+          volumeMounts:
+            - name: model
+              mountPath: /models
+            - name: fetch-script
+              mountPath: /opt/fetch
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.10.2
+          imagePullPolicy: Never
+          args:
+            - --model
+            - /models/vllm-72b
+            - --served-model-name
+            - qwen2.5-72b-awq
+            - --gpu-memory-utilization
+            - "0.92"
+            - --max-model-len
+            - "8192"
+          env:
+            - name: HF_HUB_OFFLINE
+              value: "1"
+            - name: TRANSFORMERS_OFFLINE
+              value: "1"
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 120   # large models take minutes to load
+          volumeMounts:
+            - name: shm
+              mountPath: /dev/shm
+            - name: model
+              mountPath: /models
+      volumes:
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi
+        - name: model
+          hostPath:
+            path: /root/aitra-models
+            type: DirectoryOrCreate
+        - name: fetch-script
+          configMap:
+            name: vllm-fetch-script
+            defaultMode: 0555
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-72b
+  namespace: aitra-system
+  labels:
+    app: vllm-72b
+    tier: vllm-fleet
+spec:
+  selector:
+    app: vllm-72b
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-32b
+  namespace: aitra-system
+  labels:
+    app: vllm-32b
+    tier: vllm-fleet
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-32b
+  template:
+    metadata:
+      labels:
+        app: vllm-32b
+        tier: vllm-fleet
+        aitra-ai.github.io/model-name: qwen2.5-32b-awq
+    spec:
+      initContainers:
+        - name: fetch-model
+          image: curlimages/curl:8.11.1
+          securityContext:
+            runAsUser: 0   # write to the root-owned host-path model dir
+          command: ["/bin/sh", "/opt/fetch/fetch.sh"]
+          env:
+            - name: MODEL_REPO
+              value: "Qwen/Qwen2.5-32B-Instruct-AWQ"
+            - name: MODEL_DIR
+              value: "vllm-32b"
+          volumeMounts:
+            - name: model
+              mountPath: /models
+            - name: fetch-script
+              mountPath: /opt/fetch
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.10.2
+          imagePullPolicy: Never
+          args:
+            - --model
+            - /models/vllm-32b
+            - --served-model-name
+            - qwen2.5-32b-awq
+            - --gpu-memory-utilization
+            - "0.90"
+            - --max-model-len
+            - "8192"
+          env:
+            - name: HF_HUB_OFFLINE
+              value: "1"
+            - name: TRANSFORMERS_OFFLINE
+              value: "1"
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 120   # large models take minutes to load
+          volumeMounts:
+            - name: shm
+              mountPath: /dev/shm
+            - name: model
+              mountPath: /models
+      volumes:
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi
+        - name: model
+          hostPath:
+            path: /root/aitra-models
+            type: DirectoryOrCreate
+        - name: fetch-script
+          configMap:
+            name: vllm-fetch-script
+            defaultMode: 0555
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-32b
+  namespace: aitra-system
+  labels:
+    app: vllm-32b
+    tier: vllm-fleet
+spec:
+  selector:
+    app: vllm-32b
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-14b
+  namespace: aitra-system
+  labels:
+    app: vllm-14b
+    tier: vllm-fleet
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-14b
+  template:
+    metadata:
+      labels:
+        app: vllm-14b
+        tier: vllm-fleet
+        aitra-ai.github.io/model-name: qwen2.5-14b
+    spec:
+      initContainers:
+        - name: fetch-model
+          image: curlimages/curl:8.11.1
+          securityContext:
+            runAsUser: 0   # write to the root-owned host-path model dir
+          command: ["/bin/sh", "/opt/fetch/fetch.sh"]
+          env:
+            - name: MODEL_REPO
+              value: "Qwen/Qwen2.5-14B-Instruct"
+            - name: MODEL_DIR
+              value: "vllm-14b"
+          volumeMounts:
+            - name: model
+              mountPath: /models
+            - name: fetch-script
+              mountPath: /opt/fetch
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.10.2
+          imagePullPolicy: Never
+          args:
+            - --model
+            - /models/vllm-14b
+            - --served-model-name
+            - qwen2.5-14b
+            - --gpu-memory-utilization
+            - "0.90"
+            - --max-model-len
+            - "8192"
+          env:
+            - name: HF_HUB_OFFLINE
+              value: "1"
+            - name: TRANSFORMERS_OFFLINE
+              value: "1"
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 120   # large models take minutes to load
+          volumeMounts:
+            - name: shm
+              mountPath: /dev/shm
+            - name: model
+              mountPath: /models
+      volumes:
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi
+        - name: model
+          hostPath:
+            path: /root/aitra-models
+            type: DirectoryOrCreate
+        - name: fetch-script
+          configMap:
+            name: vllm-fetch-script
+            defaultMode: 0555
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-14b
+  namespace: aitra-system
+  labels:
+    app: vllm-14b
+    tier: vllm-fleet
+spec:
+  selector:
+    app: vllm-14b
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-7b
+  namespace: aitra-system
+  labels:
+    app: vllm-7b
+    tier: vllm-fleet
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-7b
+  template:
+    metadata:
+      labels:
+        app: vllm-7b
+        tier: vllm-fleet
+        aitra-ai.github.io/model-name: qwen2.5-7b
+    spec:
+      initContainers:
+        - name: fetch-model
+          image: curlimages/curl:8.11.1
+          securityContext:
+            runAsUser: 0   # write to the root-owned host-path model dir
+          command: ["/bin/sh", "/opt/fetch/fetch.sh"]
+          env:
+            - name: MODEL_REPO
+              value: "Qwen/Qwen2.5-7B-Instruct"
+            - name: MODEL_DIR
+              value: "vllm-7b"
+          volumeMounts:
+            - name: model
+              mountPath: /models
+            - name: fetch-script
+              mountPath: /opt/fetch
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.10.2
+          imagePullPolicy: Never
+          args:
+            - --model
+            - /models/vllm-7b
+            - --served-model-name
+            - qwen2.5-7b
+            - --gpu-memory-utilization
+            - "0.90"
+            - --max-model-len
+            - "8192"
+          env:
+            - name: HF_HUB_OFFLINE
+              value: "1"
+            - name: TRANSFORMERS_OFFLINE
+              value: "1"
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 120   # large models take minutes to load
+          volumeMounts:
+            - name: shm
+              mountPath: /dev/shm
+            - name: model
+              mountPath: /models
+      volumes:
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi
+        - name: model
+          hostPath:
+            path: /root/aitra-models
+            type: DirectoryOrCreate
+        - name: fetch-script
+          configMap:
+            name: vllm-fetch-script
+            defaultMode: 0555
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-7b
+  namespace: aitra-system
+  labels:
+    app: vllm-7b
+    tier: vllm-fleet
+spec:
+  selector:
+    app: vllm-7b
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-coder-7b
+  namespace: aitra-system
+  labels:
+    app: vllm-coder-7b
+    tier: vllm-fleet
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-coder-7b
+  template:
+    metadata:
+      labels:
+        app: vllm-coder-7b
+        tier: vllm-fleet
+        aitra-ai.github.io/model-name: qwen2.5-coder-7b
+    spec:
+      initContainers:
+        - name: fetch-model
+          image: curlimages/curl:8.11.1
+          securityContext:
+            runAsUser: 0   # write to the root-owned host-path model dir
+          command: ["/bin/sh", "/opt/fetch/fetch.sh"]
+          env:
+            - name: MODEL_REPO
+              value: "Qwen/Qwen2.5-Coder-7B-Instruct"
+            - name: MODEL_DIR
+              value: "vllm-coder-7b"
+          volumeMounts:
+            - name: model
+              mountPath: /models
+            - name: fetch-script
+              mountPath: /opt/fetch
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.10.2
+          imagePullPolicy: Never
+          args:
+            - --model
+            - /models/vllm-coder-7b
+            - --served-model-name
+            - qwen2.5-coder-7b
+            - --gpu-memory-utilization
+            - "0.90"
+            - --max-model-len
+            - "8192"
+          env:
+            - name: HF_HUB_OFFLINE
+              value: "1"
+            - name: TRANSFORMERS_OFFLINE
+              value: "1"
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 120   # large models take minutes to load
+          volumeMounts:
+            - name: shm
+              mountPath: /dev/shm
+            - name: model
+              mountPath: /models
+      volumes:
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi
+        - name: model
+          hostPath:
+            path: /root/aitra-models
+            type: DirectoryOrCreate
+        - name: fetch-script
+          configMap:
+            name: vllm-fetch-script
+            defaultMode: 0555
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-coder-7b
+  namespace: aitra-system
+  labels:
+    app: vllm-coder-7b
+    tier: vllm-fleet
+spec:
+  selector:
+    app: vllm-coder-7b
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-math-7b
+  namespace: aitra-system
+  labels:
+    app: vllm-math-7b
+    tier: vllm-fleet
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-math-7b
+  template:
+    metadata:
+      labels:
+        app: vllm-math-7b
+        tier: vllm-fleet
+        aitra-ai.github.io/model-name: qwen2.5-math-7b
+    spec:
+      initContainers:
+        - name: fetch-model
+          image: curlimages/curl:8.11.1
+          securityContext:
+            runAsUser: 0   # write to the root-owned host-path model dir
+          command: ["/bin/sh", "/opt/fetch/fetch.sh"]
+          env:
+            - name: MODEL_REPO
+              value: "Qwen/Qwen2.5-Math-7B-Instruct"
+            - name: MODEL_DIR
+              value: "vllm-math-7b"
+          volumeMounts:
+            - name: model
+              mountPath: /models
+            - name: fetch-script
+              mountPath: /opt/fetch
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.10.2
+          imagePullPolicy: Never
+          args:
+            - --model
+            - /models/vllm-math-7b
+            - --served-model-name
+            - qwen2.5-math-7b
+            - --gpu-memory-utilization
+            - "0.90"
+            - --max-model-len
+            - "8192"
+          env:
+            - name: HF_HUB_OFFLINE
+              value: "1"
+            - name: TRANSFORMERS_OFFLINE
+              value: "1"
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 120   # large models take minutes to load
+          volumeMounts:
+            - name: shm
+              mountPath: /dev/shm
+            - name: model
+              mountPath: /models
+      volumes:
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi
+        - name: model
+          hostPath:
+            path: /root/aitra-models
+            type: DirectoryOrCreate
+        - name: fetch-script
+          configMap:
+            name: vllm-fetch-script
+            defaultMode: 0555
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-math-7b
+  namespace: aitra-system
+  labels:
+    app: vllm-math-7b
+    tier: vllm-fleet
+spec:
+  selector:
+    app: vllm-math-7b
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-3b
+  namespace: aitra-system
+  labels:
+    app: vllm-3b
+    tier: vllm-fleet
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-3b
+  template:
+    metadata:
+      labels:
+        app: vllm-3b
+        tier: vllm-fleet
+        aitra-ai.github.io/model-name: qwen2.5-3b
+    spec:
+      initContainers:
+        - name: fetch-model
+          image: curlimages/curl:8.11.1
+          securityContext:
+            runAsUser: 0   # write to the root-owned host-path model dir
+          command: ["/bin/sh", "/opt/fetch/fetch.sh"]
+          env:
+            - name: MODEL_REPO
+              value: "Qwen/Qwen2.5-3B-Instruct"
+            - name: MODEL_DIR
+              value: "vllm-3b"
+          volumeMounts:
+            - name: model
+              mountPath: /models
+            - name: fetch-script
+              mountPath: /opt/fetch
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.10.2
+          imagePullPolicy: Never
+          args:
+            - --model
+            - /models/vllm-3b
+            - --served-model-name
+            - qwen2.5-3b
+            - --gpu-memory-utilization
+            - "0.90"
+            - --max-model-len
+            - "8192"
+          env:
+            - name: HF_HUB_OFFLINE
+              value: "1"
+            - name: TRANSFORMERS_OFFLINE
+              value: "1"
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 120   # large models take minutes to load
+          volumeMounts:
+            - name: shm
+              mountPath: /dev/shm
+            - name: model
+              mountPath: /models
+      volumes:
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi
+        - name: model
+          hostPath:
+            path: /root/aitra-models
+            type: DirectoryOrCreate
+        - name: fetch-script
+          configMap:
+            name: vllm-fetch-script
+            defaultMode: 0555
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-3b
+  namespace: aitra-system
+  labels:
+    app: vllm-3b
+    tier: vllm-fleet
+spec:
+  selector:
+    app: vllm-3b
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-1p5b
+  namespace: aitra-system
+  labels:
+    app: vllm-1p5b
+    tier: vllm-fleet
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-1p5b
+  template:
+    metadata:
+      labels:
+        app: vllm-1p5b
+        tier: vllm-fleet
+        aitra-ai.github.io/model-name: qwen2.5-1.5b
+    spec:
+      initContainers:
+        - name: fetch-model
+          image: curlimages/curl:8.11.1
+          securityContext:
+            runAsUser: 0   # write to the root-owned host-path model dir
+          command: ["/bin/sh", "/opt/fetch/fetch.sh"]
+          env:
+            - name: MODEL_REPO
+              value: "Qwen/Qwen2.5-1.5B-Instruct"
+            - name: MODEL_DIR
+              value: "vllm-1p5b"
+          volumeMounts:
+            - name: model
+              mountPath: /models
+            - name: fetch-script
+              mountPath: /opt/fetch
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.10.2
+          imagePullPolicy: Never
+          args:
+            - --model
+            - /models/vllm-1p5b
+            - --served-model-name
+            - qwen2.5-1.5b
+            - --gpu-memory-utilization
+            - "0.90"
+            - --max-model-len
+            - "8192"
+          env:
+            - name: HF_HUB_OFFLINE
+              value: "1"
+            - name: TRANSFORMERS_OFFLINE
+              value: "1"
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 120   # large models take minutes to load
+          volumeMounts:
+            - name: shm
+              mountPath: /dev/shm
+            - name: model
+              mountPath: /models
+      volumes:
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi
+        - name: model
+          hostPath:
+            path: /root/aitra-models
+            type: DirectoryOrCreate
+        - name: fetch-script
+          configMap:
+            name: vllm-fetch-script
+            defaultMode: 0555
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-1p5b
+  namespace: aitra-system
+  labels:
+    app: vllm-1p5b
+    tier: vllm-fleet
+spec:
+  selector:
+    app: vllm-1p5b
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
