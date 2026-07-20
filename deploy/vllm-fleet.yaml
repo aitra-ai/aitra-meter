@@ -1,4 +1,4 @@
-# Demo A fleet — 8 vLLM models, one per H100, for per-model energy attribution.
+# Demo A fleet — 8 vLLM models, one per A100-80G, for per-model energy attribution.
 # (KubeCon Japan demo; see docs in the demo runbook.)
 #
 # Pattern follows vllm-demo.yaml: an initContainer curl-downloads the model
@@ -8,7 +8,7 @@
 #
 # Model spread (per demo brief, pending final V1 confirmation):
 #   large: 72B-AWQ, 32B-AWQ   mid: 14B, 7B, coder-7B, math-7B   small: 3B, 1.5B
-# All AWQ variants fit a single 80GB H100. Every pod requests exactly 1 GPU,
+# All AWQ variants fit a single 80GB A100. Every pod requests exactly 1 GPU,
 # so the per-model measurement agent attributes exactly that GPU's energy.
 #
 # NOTE: download the large models well before the demo (72B-AWQ ≈ 41 GB).

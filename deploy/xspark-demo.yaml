@@ -1,0 +1,367 @@
+# xspark (GB10 / DGX Spark) — booth-local demo, independent of the remote lab.
+#
+# The xspark cluster already runs the full aitra stack (aggregation,
+# prometheus, dcgm-exporter, per-model measurement agent). This adds a
+# model-SWAP set: three sizes of Qwen2.5, all replicas=0. Scale exactly ONE
+# up at a time — the per-model agent discovers whichever pod holds the GPU,
+# its J/token tile appears on the dashboard, scale it down and it vanishes.
+# That zero-config appear/disappear is itself the demo.
+#
+#   kubectl -n aitra-system scale deploy vllm-demo --replicas=0   # free the GPU
+#   kubectl -n aitra-system scale deploy xspark-7b --replicas=1
+#   ... demo ... then swap:
+#   kubectl -n aitra-system scale deploy xspark-7b --replicas=0
+#   kubectl -n aitra-system scale deploy xspark-14b --replicas=1
+#
+# GB10 has 128GB unified memory — every size here fits comfortably; only one
+# runs at a time (single GPU). Downloads go through hf-mirror like the fleet.
+# Includes its own copy of the fetch-script ConfigMap (the fleet manifest is
+# not applied on this cluster).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vllm-fetch-script
+  namespace: aitra-system
+data:
+  fetch.sh: |
+    #!/bin/sh
+    set -e
+    D="/models/$MODEL_DIR"
+    BASE="https://hf-mirror.com/$MODEL_REPO/resolve/main"
+    mkdir -p "$D"
+    fetch() {
+      f="$1"; req="$2"
+      if [ -s "$D/$f" ]; then echo "have $f"; return 0; fi
+      n=0
+      until curl -fSL --max-time 1800 -o "$D/$f.part" "$BASE/$f"; do
+        n=$((n+1))
+        if [ "$n" -ge 15 ]; then
+          [ "$req" = "optional" ] && { echo "skip optional $f"; rm -f "$D/$f.part"; return 0; }
+          echo "FAILED $f after 15 tries"; exit 1
+        fi
+        echo "retry $f ($n)"; sleep 5
+      done
+      mv "$D/$f.part" "$D/$f"; echo "got $f"
+    }
+    for f in config.json generation_config.json tokenizer_config.json tokenizer.json; do
+      fetch "$f" required
+    done
+    for f in merges.txt vocab.json; do
+      fetch "$f" optional
+    done
+    if curl -fsL --max-time 120 -o "$D/model.safetensors.index.json" "$BASE/model.safetensors.index.json"; then
+      echo "sharded repo"
+      for s in $(grep -o '"[^"]*\.safetensors"' "$D/model.safetensors.index.json" | tr -d '"' | sort -u); do
+        fetch "$s" required
+      done
+    else
+      rm -f "$D/model.safetensors.index.json"
+      fetch model.safetensors required
+    fi
+    echo "model ready:"; ls -la "$D"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: xspark-3b
+  namespace: aitra-system
+  labels:
+    app: xspark-3b
+    tier: xspark-swap
+spec:
+  replicas: 0        # scale exactly one swap model up at a time
+  selector:
+    matchLabels:
+      app: xspark-3b
+  template:
+    metadata:
+      labels:
+        app: xspark-3b
+        tier: xspark-swap
+        aitra-ai.github.io/model-name: qwen2.5-3b
+    spec:
+      initContainers:
+        - name: fetch-model
+          image: curlimages/curl:8.11.1
+          securityContext:
+            runAsUser: 0
+          command: ["/bin/sh", "/opt/fetch/fetch.sh"]
+          env:
+            - name: MODEL_REPO
+              value: "Qwen/Qwen2.5-3B-Instruct"
+            - name: MODEL_DIR
+              value: "xspark-3b"
+          volumeMounts:
+            - name: model
+              mountPath: /models
+            - name: fetch-script
+              mountPath: /opt/fetch
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.10.2
+          imagePullPolicy: Never
+          args:
+            - --model
+            - /models/xspark-3b
+            - --served-model-name
+            - qwen2.5-3b
+            - --gpu-memory-utilization
+            - "0.30"
+            - --max-model-len
+            - "8192"
+          env:
+            - name: HF_HUB_OFFLINE
+              value: "1"
+            - name: TRANSFORMERS_OFFLINE
+              value: "1"
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 120
+          volumeMounts:
+            - name: shm
+              mountPath: /dev/shm
+            - name: model
+              mountPath: /models
+      volumes:
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 4Gi
+        - name: model
+          hostPath:
+            path: /root/aitra-models
+            type: DirectoryOrCreate
+        - name: fetch-script
+          configMap:
+            name: vllm-fetch-script
+            defaultMode: 0555
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: xspark-3b
+  namespace: aitra-system
+  labels:
+    app: xspark-3b
+    tier: xspark-swap
+spec:
+  selector:
+    app: xspark-3b
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: xspark-7b
+  namespace: aitra-system
+  labels:
+    app: xspark-7b
+    tier: xspark-swap
+spec:
+  replicas: 0        # scale exactly one swap model up at a time
+  selector:
+    matchLabels:
+      app: xspark-7b
+  template:
+    metadata:
+      labels:
+        app: xspark-7b
+        tier: xspark-swap
+        aitra-ai.github.io/model-name: qwen2.5-7b
+    spec:
+      initContainers:
+        - name: fetch-model
+          image: curlimages/curl:8.11.1
+          securityContext:
+            runAsUser: 0
+          command: ["/bin/sh", "/opt/fetch/fetch.sh"]
+          env:
+            - name: MODEL_REPO
+              value: "Qwen/Qwen2.5-7B-Instruct"
+            - name: MODEL_DIR
+              value: "xspark-7b"
+          volumeMounts:
+            - name: model
+              mountPath: /models
+            - name: fetch-script
+              mountPath: /opt/fetch
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.10.2
+          imagePullPolicy: Never
+          args:
+            - --model
+            - /models/xspark-7b
+            - --served-model-name
+            - qwen2.5-7b
+            - --gpu-memory-utilization
+            - "0.30"
+            - --max-model-len
+            - "8192"
+          env:
+            - name: HF_HUB_OFFLINE
+              value: "1"
+            - name: TRANSFORMERS_OFFLINE
+              value: "1"
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 120
+          volumeMounts:
+            - name: shm
+              mountPath: /dev/shm
+            - name: model
+              mountPath: /models
+      volumes:
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 4Gi
+        - name: model
+          hostPath:
+            path: /root/aitra-models
+            type: DirectoryOrCreate
+        - name: fetch-script
+          configMap:
+            name: vllm-fetch-script
+            defaultMode: 0555
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: xspark-7b
+  namespace: aitra-system
+  labels:
+    app: xspark-7b
+    tier: xspark-swap
+spec:
+  selector:
+    app: xspark-7b
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: xspark-14b
+  namespace: aitra-system
+  labels:
+    app: xspark-14b
+    tier: xspark-swap
+spec:
+  replicas: 0        # scale exactly one swap model up at a time
+  selector:
+    matchLabels:
+      app: xspark-14b
+  template:
+    metadata:
+      labels:
+        app: xspark-14b
+        tier: xspark-swap
+        aitra-ai.github.io/model-name: qwen2.5-14b
+    spec:
+      initContainers:
+        - name: fetch-model
+          image: curlimages/curl:8.11.1
+          securityContext:
+            runAsUser: 0
+          command: ["/bin/sh", "/opt/fetch/fetch.sh"]
+          env:
+            - name: MODEL_REPO
+              value: "Qwen/Qwen2.5-14B-Instruct"
+            - name: MODEL_DIR
+              value: "xspark-14b"
+          volumeMounts:
+            - name: model
+              mountPath: /models
+            - name: fetch-script
+              mountPath: /opt/fetch
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.10.2
+          imagePullPolicy: Never
+          args:
+            - --model
+            - /models/xspark-14b
+            - --served-model-name
+            - qwen2.5-14b
+            - --gpu-memory-utilization
+            - "0.30"
+            - --max-model-len
+            - "8192"
+          env:
+            - name: HF_HUB_OFFLINE
+              value: "1"
+            - name: TRANSFORMERS_OFFLINE
+              value: "1"
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 120
+          volumeMounts:
+            - name: shm
+              mountPath: /dev/shm
+            - name: model
+              mountPath: /models
+      volumes:
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 4Gi
+        - name: model
+          hostPath:
+            path: /root/aitra-models
+            type: DirectoryOrCreate
+        - name: fetch-script
+          configMap:
+            name: vllm-fetch-script
+            defaultMode: 0555
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: xspark-14b
+  namespace: aitra-system
+  labels:
+    app: xspark-14b
+    tier: xspark-swap
+spec:
+  selector:
+    app: xspark-14b
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000

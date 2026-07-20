@@ -1,9 +1,14 @@
 # KubeCon Japan 2026 — Aitra Meter Demo Runbook
 
-Demos run on the 8×H100 node (XFusion / Singapore Open Lab), shown remotely
-from the booth. Everything below is executed **lab-side**; the booth only pulls
-the Grafana dashboards. Scope: Meter only — no Policy, no per-phase energy
-claims.
+Two rigs, two roles:
+
+| Rig | Hardware | Role | Demos |
+|---|---|---|---|
+| **Lab rig** (remote) | 8× A100-80G, one node | Main show, pulled remotely via Grafana | A (primary), B (TP curve), C Panel 1 (shapes) |
+| **xspark** (local) | GB10 / DGX Spark, 1 GPU | Booth-local, zero network dependency | C Panel 2 (concurrency), model-swap mini-demo, live fallback |
+
+Everything below is executed **rig-side**; the booth only pulls dashboards.
+Scope: Meter only — no Policy, no per-phase energy claims.
 
 ## 0. One-time setup (do this week, not demo day)
 
@@ -115,18 +120,64 @@ Dashboard: **Demo C: Workload Contrast**. Wording discipline: shape panels show
 aggregate J/token differing *because* prefill/decode ratios differ — **never**
 present as per-phase energy measurement.
 
-## 5. Fallback ladder (decide top-down on demo day)
+## 5. xspark (GB10) — booth-local demo
 
-1. **Full Demo A/B/C** — per-model attribution validated (§1 all green).
-2. **Single-tenant node** — per-model path not validated: run one model at a
-   time on the full node (classic agent mode, no `--per-model`), swap models
-   between segments; Demo C Panel 2 works fully; Demo B works (whole-node
-   energy = the TP group at every degree, curve still real).
-3. **Recorded loop** — remote link down or rig unhealthy: play the recorded
-   run-through (record it during the §1 rehearsal — screen-capture one full
-   Demo A + one TP sweep at 1080p, loop it).
+The xspark cluster already runs the full stack (aggregation, prometheus,
+dcgm-exporter, per-model agent, vllm-demo 0.5B). Add the demo surface and the
+swap set:
 
-## 6. Remote-delivery checklist (before July 28)
+```bash
+# on the xspark cluster
+kubectl -n aitra-system create secret generic grafana-admin --from-literal=password='<pick>'
+kubectl -n aitra-system create configmap aitra-demo-dashboards \
+  --from-file=deploy/grafana-dashboards/ --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f deploy/grafana.yaml       # NodePort 30852 (dashboard app stays on 30851)
+kubectl apply -f deploy/xspark-demo.yaml   # 3B/7B/14B swap set, all replicas=0
+# pre-download all three models once (start each briefly, or run the fetch
+# initContainers by scaling each to 1 and back to 0 after "model ready")
+```
+
+Two booth-local segments, no remote link involved:
+
+1. **Model-swap mini-demo** (the zero-config attribution story): scale
+   `vllm-demo` down, `xspark-7b` up → its J/token tile appears by itself;
+   swap 7B → 14B → tile changes; scale to 0 → only the idle series remains.
+   One GPU, but the same discovery/attribution machinery as the fleet.
+2. **Demo C Panel 2 — concurrency sweep** against the active swap model
+   (`vllm bench serve` from inside the vllm pod or any lab host):
+
+   ```bash
+   for C in 1 2 4 8 16 32; do
+     vllm bench serve --base-url http://xspark-7b.aitra-system:8000 \
+       --model qwen2.5-7b --max-concurrency $C --num-prompts $((C*40))
+     sleep 90
+   done
+   ```
+
+3. Optional talking point: same `qwen2.5-7b` runs on both rigs — compare its
+   J/token on A100 vs GB10 (two Grafana tabs). Different hardware, same
+   measurement pipeline.
+
+GB10 notes: 128GB unified memory — every swap size fits; single GPU means one
+model at a time; energy path is the same dcgm-exporter feed already validated
+on this box.
+
+## 6. Fallback ladder (decide top-down on demo day)
+
+1. **Full remote Demo A/B/C** — per-model attribution validated (§1 all
+   green), remote link healthy.
+2. **Single-tenant lab node** — per-model path not validated: run one model
+   at a time on the full node (classic agent mode, no `--per-model`); Demo C
+   Panel 2 works fully; Demo B works (whole-node energy = the TP group at
+   every degree, curve still real).
+3. **xspark live-local** — remote link down: run the §5 segments on the
+   booth-local box. Still a real, live measurement demo — lead with the
+   model-swap story and the concurrency sweep.
+4. **Recorded loop** — everything else failed: play the recorded run-through
+   (record it during the §1 rehearsal — screen-capture one full Demo A + one
+   TP sweep at 1080p, loop it).
+
+## 7. Remote-delivery checklist (before July 28)
 
 - [ ] Grafana reachable from a venue-like network (phone hotspot test, not lab
       LAN). Read-only anonymous access confirmed; admin login NOT usable
@@ -138,7 +189,7 @@ present as per-phase energy measurement.
       session with the §2–§4 commands pre-typed.
 - [ ] Second rehearsal end-to-end over the representative network.
 
-## 7. Known-open items (tracked, not demo-blocking after fallback decisions)
+## 8. Known-open items (tracked, not demo-blocking after fallback decisions)
 
 - **aigateway** — not in this repo, ownership unconfirmed; demos route load
   directly at per-model Services instead. If it lands, point `vllm bench
