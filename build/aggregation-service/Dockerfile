@@ -1,7 +1,7 @@
 # Aggregation service — cluster-scoped Deployment. Joins GPU energy with
 # inference token counts and exposes the resulting J/token series to
 # Prometheus.
-FROM golang:1.25-bookworm AS builder
+FROM golang:1.26-bookworm AS builder
 WORKDIR /src
 
 COPY go.mod go.sum ./
