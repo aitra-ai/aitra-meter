@@ -49,7 +49,10 @@ data:
     for f in merges.txt vocab.json; do
       fetch "$f" optional
     done
-    if curl -fsL --max-time 120 -o "$D/model.safetensors.index.json" "$BASE/model.safetensors.index.json"; then
+    if [ ! -s "$D/model.safetensors.index.json" ]; then
+      curl -fsL --max-time 120 -o "$D/model.safetensors.index.json" "$BASE/model.safetensors.index.json" || rm -f "$D/model.safetensors.index.json"
+    fi
+    if [ -s "$D/model.safetensors.index.json" ]; then
       echo "sharded repo"
       for s in $(grep -o '"[^"]*\.safetensors"' "$D/model.safetensors.index.json" | tr -d '"' | sort -u); do
         fetch "$s" required
