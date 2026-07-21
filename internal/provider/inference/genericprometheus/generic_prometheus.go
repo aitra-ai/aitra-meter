@@ -2,6 +2,11 @@
 // inference server that exposes a Prometheus endpoint. Metric names and the
 // model name label are configurable so the same provider works with TGI,
 // SGLang, Ollama, Triton, and custom servers.
+//
+// Parsing is delegated to the shared promtext package, which preserves each
+// series' label set and sums across series. A server that shards a model across
+// GPUs exposes one series per shard; the tokens the model generated are the sum
+// over them.
 package genericprometheus
 
 import (
@@ -9,11 +14,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/aitra-ai/aitra-meter/internal/provider"
+	"github.com/aitra-ai/aitra-meter/internal/provider/inference/promtext"
 )
 
 func init() {
@@ -44,68 +49,57 @@ type GenericPrometheusProvider struct {
 
 func (g *GenericPrometheusProvider) Name() string { return "generic-prometheus" }
 
+// OutputTokens returns cumulative output tokens, summed across every series of
+// the configured counter.
 func (g *GenericPrometheusProvider) OutputTokens(ctx context.Context) (uint64, error) {
-	m, err := g.scrape(ctx)
+	series, err := g.scrape(ctx)
 	if err != nil {
 		return 0, err
 	}
-	val, ok := m[g.outputTokensMetric]
+	total, ok := promtext.Sum(series, g.outputTokensMetric)
 	if !ok {
 		return 0, fmt.Errorf("generic-prometheus: metric %q not found at %s", g.outputTokensMetric, g.endpoint)
 	}
-	return uint64(val), nil
+	if total < 0 {
+		return 0, fmt.Errorf("generic-prometheus: metric %q summed to a negative value (%v) at %s",
+			g.outputTokensMetric, total, g.endpoint)
+	}
+	return uint64(total), nil
 }
 
+// RequestsRunning returns in-flight requests, summed across series. It feeds
+// idle detection: the server is busy if any shard is busy.
 func (g *GenericPrometheusProvider) RequestsRunning(ctx context.Context) (int, error) {
-	m, err := g.scrape(ctx)
+	series, err := g.scrape(ctx)
 	if err != nil {
 		return 0, err
 	}
-	return int(m[g.requestsRunningMetric]), nil
+	total, _ := promtext.Sum(series, g.requestsRunningMetric)
+	return int(total), nil
 }
 
+// ModelName returns the model served at the endpoint, read from the model label
+// on the output-token counter. If series disagree, the endpoint is serving more
+// than one model and its energy cannot be attributed to a single one; that is
+// reported rather than silently resolved.
 func (g *GenericPrometheusProvider) ModelName(ctx context.Context) (string, error) {
-	lines, err := g.rawLines(ctx)
+	series, err := g.scrape(ctx)
 	if err != nil {
 		return "", err
 	}
-	prefix := g.outputTokensMetric + "{"
-	for _, line := range lines {
-		if strings.HasPrefix(line, prefix) {
-			if name := extractLabel(line, g.modelNameLabel); name != "" {
-				return name, nil
-			}
-		}
+	value, conflict, consistent := promtext.SingleLabelValue(series, g.outputTokensMetric, g.modelNameLabel)
+	if !consistent {
+		return "", fmt.Errorf("generic-prometheus: metric %q at %s reports multiple values for label %q (%q and %q); "+
+			"energy cannot be attributed to a single model — point the provider at a single-model endpoint",
+			g.outputTokensMetric, g.endpoint, g.modelNameLabel, value, conflict)
 	}
-	return "unknown", nil
+	if value == "" {
+		return "unknown", nil
+	}
+	return value, nil
 }
 
-func (g *GenericPrometheusProvider) scrape(ctx context.Context) (map[string]float64, error) {
-	lines, err := g.rawLines(ctx)
-	if err != nil {
-		return nil, err
-	}
-	res := map[string]float64{}
-	for _, line := range lines {
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		parts := strings.Fields(line)
-		if len(parts) < 2 {
-			continue
-		}
-		name := parts[0]
-		if i := strings.Index(name, "{"); i > 0 {
-			name = name[:i]
-		}
-		if val, err := strconv.ParseFloat(parts[len(parts)-1], 64); err == nil {
-			res[name] = val
-		}
-	}
-	return res, nil
-}
-
-func (g *GenericPrometheusProvider) rawLines(ctx context.Context) ([]string, error) {
+func (g *GenericPrometheusProvider) scrape(ctx context.Context) (map[string][]promtext.Sample, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, g.endpoint, nil)
 	if err != nil {
 		return nil, err
@@ -119,21 +113,7 @@ func (g *GenericPrometheusProvider) rawLines(ctx context.Context) ([]string, err
 	if err != nil {
 		return nil, err
 	}
-	return strings.Split(string(body), "\n"), nil
-}
-
-func extractLabel(line, label string) string {
-	key := label + `="`
-	idx := strings.Index(line, key)
-	if idx < 0 {
-		return ""
-	}
-	start := idx + len(key)
-	end := strings.Index(line[start:], `"`)
-	if end < 0 {
-		return ""
-	}
-	return line[start : start+end]
+	return promtext.Parse(strings.Split(string(body), "\n")), nil
 }
 
 func orDefault(v, d string) string {
