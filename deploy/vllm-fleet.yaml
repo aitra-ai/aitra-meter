@@ -43,10 +43,11 @@ data:
       done
       mv "$D/$f.part" "$D/$f"; echo "got $f"
     }
-    for f in config.json generation_config.json tokenizer_config.json tokenizer.json; do
+    for f in config.json tokenizer_config.json tokenizer.json; do
       fetch "$f" required
     done
-    for f in merges.txt vocab.json; do
+    # generation_config.json absent from Qwen3.5+; template/preprocessor files optional
+    for f in generation_config.json merges.txt vocab.json chat_template.jinja preprocessor_config.json; do
       fetch "$f" optional
     done
     if [ ! -s "$D/model.safetensors.index.json" ]; then
