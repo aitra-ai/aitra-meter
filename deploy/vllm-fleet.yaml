@@ -824,9 +824,11 @@ spec:
             - --served-model-name
             - qwen3.5-122b-a10b-int4
             - --gpu-memory-utilization
-            - "0.93"
+            - "0.95"
             - --max-model-len
-            - "8192"
+            - "4096"   # 61G int4 weights leave little headroom on 80G
+            - --limit-mm-per-prompt
+            - '{"image": 0, "video": 0}'   # text-only: skip encoder-cache profiling
           env:
             - name: HF_HUB_OFFLINE
               value: "1"
