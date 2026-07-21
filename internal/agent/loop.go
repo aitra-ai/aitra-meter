@@ -176,6 +176,22 @@ func (l *Loop) reportWindow(ctx context.Context, windowID string) {
 		l.log.Warn("OutputTokens read failed", zap.Error(tokErr))
 	}
 
+	// Optional read-only latency correlation: providers that expose TTFT/TPOT
+	// histograms (currently vLLM) get their totals logged alongside the energy
+	// window at debug level. The extra scrape is skipped unless debug logging
+	// is enabled. Aitra does not re-expose these as its own metrics.
+	if lp, ok := l.cfg.InferenceProvider.(provider.LatencyProvider); ok && l.log.Core().Enabled(zap.DebugLevel) {
+		if sample, present, latErr := lp.Latency(ctx); latErr == nil && present {
+			l.log.Debug("latency counters",
+				zap.String("window_id", windowID),
+				zap.Float64("ttft_count", sample.TTFTCount),
+				zap.Float64("ttft_sum_seconds", sample.TTFTSum),
+				zap.Float64("tpot_count", sample.TPOTCount),
+				zap.Float64("tpot_sum_seconds", sample.TPOTSum),
+			)
+		}
+	}
+
 	powerWatts := joules / l.cfg.WindowDuration.Seconds()
 
 	report := &measurementv1.WindowReport{

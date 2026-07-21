@@ -1,0 +1,15 @@
+# Aitra Meter values for an SGLang inference server.
+#
+# PREREQUISITE: the SGLang server must be launched with --enable-metrics,
+# otherwise /metrics does not exist:
+#
+#   python -m sglang.launch_server --model-path <model> --enable-metrics
+#
+# The provider reads sglang_generation_tokens_total (v0.5.4+ naming) and
+# falls back to the legacy "sglang:" prefix on older releases.
+measurementAgent:
+  inferenceProvider:
+    type: sglang
+    config:
+      # SGLang serving port (default 30000); /metrics is on the same port.
+      endpoint: "http://localhost:30000/metrics"
