@@ -13,6 +13,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -54,18 +55,26 @@ CREATE TABLE IF NOT EXISTS aitra_measurements (
 	cv                 REAL    NOT NULL,
 	stable             INTEGER NOT NULL,
 	energy_provider    TEXT    NOT NULL,
-	inference_provider TEXT    NOT NULL
+	inference_provider TEXT    NOT NULL,
+	-- Nullable on purpose: NULL means host energy was not measured on this node,
+	-- which is distinct from a measured zero. Never store 0 for "unmeasured".
+	host_energy_joules REAL
 );
 CREATE INDEX IF NOT EXISTS idx_cluster_ns_ts
 	ON aitra_measurements (cluster, namespace, timestamp_ms);`
+
+// migrateAddHostEnergySQL adds host_energy_joules to databases created before
+// issue #82. "duplicate column name" is expected and ignored on new databases
+// (where the column is already in createTableSQL).
+const migrateAddHostEnergySQL = `ALTER TABLE aitra_measurements ADD COLUMN host_energy_joules REAL`
 
 const insertSQL = `
 INSERT INTO aitra_measurements (
 	timestamp_ms, cluster, node, namespace, workload, model, hardware, precision,
 	team, cost_centre, energy_joules, output_tokens, j_per_token,
 	calibration_tier, ref_j_per_token, attribution_method, cv, stable,
-	energy_provider, inference_provider
-) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+	energy_provider, inference_provider, host_energy_joules
+) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
 
 const chargebackSQL = `
 SELECT
@@ -104,6 +113,13 @@ func New(path string) (*Backend, error) {
 		return nil, fmt.Errorf("sqlite create table: %w", err)
 	}
 
+	// Add host_energy_joules to pre-#82 databases. Ignore the "duplicate column"
+	// error that a new database (already carrying the column) returns.
+	if _, err := db.Exec(migrateAddHostEnergySQL); err != nil && !strings.Contains(err.Error(), "duplicate column") {
+		db.Close()
+		return nil, fmt.Errorf("sqlite migrate host_energy_joules: %w", err)
+	}
+
 	stmt, err := db.Prepare(insertSQL)
 	if err != nil {
 		db.Close()
@@ -138,13 +154,19 @@ func (b *Backend) WriteBatch(ctx context.Context, rs []model.MeasurementRecord) 
 		if r.Stable {
 			stable = 1
 		}
+		// nil pointer -> SQL NULL (not measured); a value -> the measured joules.
+		// This is where "absent is not zero" is enforced at the storage boundary.
+		hostEnergy := sql.NullFloat64{}
+		if r.HostEnergyJoules != nil {
+			hostEnergy = sql.NullFloat64{Float64: *r.HostEnergyJoules, Valid: true}
+		}
 		if _, err := txStmt.ExecContext(ctx,
 			r.TimestampUnixMs, r.Cluster, r.Node, r.Namespace, r.Workload,
 			r.Model, r.Hardware, r.Precision, r.Team, r.CostCentre,
 			r.EnergyJoules, r.OutputTokens, r.JPerToken,
 			string(r.CalibrationTier), r.RefJPerToken,
 			string(r.AttributionMethod), r.CV, stable,
-			r.EnergyProvider, r.InferenceProvider,
+			r.EnergyProvider, r.InferenceProvider, hostEnergy,
 		); err != nil {
 			_ = tx.Rollback()
 			return fmt.Errorf("sqlite insert: %w", err)

@@ -25,19 +25,25 @@ const (
 // MeasurementRecord is the canonical schema for a single measurement window.
 // It is written to the storage backend and used in Prometheus metrics.
 type MeasurementRecord struct {
-	TimestampUnixMs   int64
-	Cluster           string
-	Node              string
-	Namespace         string
-	Workload          string
-	Model             string
-	Hardware          string
-	Precision         string
-	Team              string
-	CostCentre        string
-	EnergyJoules      float64
-	OutputTokens      uint64
-	JPerToken         float64
+	TimestampUnixMs int64
+	Cluster         string
+	Node            string
+	Namespace       string
+	Workload        string
+	Model           string
+	Hardware        string
+	Precision       string
+	Team            string
+	CostCentre      string
+	EnergyJoules    float64
+	OutputTokens    uint64
+	JPerToken       float64
+	// HostEnergyJoules is the non-accelerator (CPU package, DRAM, board) energy
+	// consumed during the window, in joules. It is a pointer, not a value, on
+	// purpose: nil means "not measured", which must never collapse to a zero
+	// reading — a zero would make an unmeasured node look more efficient than a
+	// measured one. See provider.ErrHostEnergyUnavailable.
+	HostEnergyJoules  *float64
 	CalibrationTier   CalibrationTier
 	RefJPerToken      float64
 	AttributionMethod AttributionMethod

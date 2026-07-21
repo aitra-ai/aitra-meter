@@ -52,6 +52,12 @@ type Config struct {
 	// EnergyProvider and InferenceProvider are the measurement backends.
 	EnergyProvider    provider.EnergyProvider
 	InferenceProvider provider.InferenceMetricsProvider
+
+	// HostEnergyProvider measures non-accelerator (CPU/DRAM/board) energy. It is
+	// optional: when nil, or when it reports Available()==false, host energy is
+	// omitted from every WindowReport — the field is left unset (not zero) so the
+	// aggregation service can distinguish "not measured" from "measured zero".
+	HostEnergyProvider provider.HostEnergyProvider
 }
 
 // Loop runs the measurement loop for a single node.
@@ -67,6 +73,14 @@ type Loop struct {
 	seenFirstToken bool
 	// windowSeq is a monotonic counter for window IDs.
 	windowSeq uint64
+
+	// hostAvailable is resolved once at construction from HostEnergyProvider
+	// .Available(). When false, no host window is opened and no host field is set.
+	hostAvailable bool
+	// hostBegun records whether the current window's host BeginWindow succeeded,
+	// so reportWindow only ends a window it actually started. The loop is a single
+	// goroutine (begin → wait → report), so a plain field is safe here.
+	hostBegun bool
 }
 
 // New creates a Loop and dials the aggregation service. Call Run to start.
@@ -89,12 +103,32 @@ func New(cfg Config, log *zap.Logger) (*Loop, error) {
 		return nil, fmt.Errorf("dial aggregation service %q: %w", cfg.AggregatorAddr, err)
 	}
 
-	return &Loop{
+	l := &Loop{
 		cfg:    cfg,
 		log:    log,
 		client: measurementv1.NewMeasurementServiceClient(conn),
 		conn:   conn,
-	}, nil
+	}
+
+	// Resolve host-energy capability exactly once, and log it once at INFO — not
+	// per window (that is log spam that gets filtered, defeating the purpose).
+	if cfg.HostEnergyProvider != nil {
+		l.hostAvailable = cfg.HostEnergyProvider.Available(context.Background())
+		if l.hostAvailable {
+			log.Info("host energy measurement enabled",
+				zap.String("host_provider", cfg.HostEnergyProvider.Name()))
+		} else {
+			reason := "provider reports no host telemetry on this hardware"
+			if n, ok := cfg.HostEnergyProvider.(*provider.NoopHostEnergy); ok {
+				reason = n.Reason
+			}
+			log.Info("host energy unavailable — system J/token will be omitted, never zeroed",
+				zap.String("host_provider", cfg.HostEnergyProvider.Name()),
+				zap.String("reason", reason))
+		}
+	}
+
+	return l, nil
 }
 
 // Close releases the gRPC connection.
@@ -130,6 +164,18 @@ func (l *Loop) Run(ctx context.Context) {
 				return
 			}
 			continue
+		}
+
+		// Open the host-energy window alongside the GPU window. A host failure
+		// never affects the GPU path: we simply omit host energy for this window.
+		l.hostBegun = false
+		if l.hostAvailable {
+			if err := l.cfg.HostEnergyProvider.BeginWindow(ctx, windowID); err != nil {
+				l.log.Debug("host BeginWindow failed — host energy omitted this window",
+					zap.String("window_id", windowID), zap.Error(err))
+			} else {
+				l.hostBegun = true
+			}
 		}
 
 		// Wait for the window to elapse.
@@ -188,6 +234,22 @@ func (l *Loop) reportWindow(ctx context.Context, windowID string) {
 		EnergyProvider:    l.cfg.EnergyProvider.Name(),
 		InferenceProvider: l.cfg.InferenceProvider.Name(),
 		TimestampUnixMs:   time.Now().UnixMilli(),
+	}
+
+	// Close the host-energy window, if one was opened. On success the fields are
+	// set (presence = measured); on failure they are left unset (nil), which the
+	// aggregation service reads as "not measured" — never as a zero reading.
+	if l.hostBegun {
+		hostJoules, herr := l.cfg.HostEnergyProvider.EndWindow(ctx, windowID)
+		if herr != nil {
+			l.log.Debug("host EndWindow failed — host energy omitted this window",
+				zap.String("window_id", windowID), zap.Error(herr))
+		} else {
+			hostPower := hostJoules / l.cfg.WindowDuration.Seconds()
+			report.HostEnergyJoules = &hostJoules
+			report.HostPowerWatts = &hostPower
+			report.HostProvider = l.cfg.HostEnergyProvider.Name()
+		}
 	}
 
 	ack, err := l.client.ReportWindow(ctx, report)
