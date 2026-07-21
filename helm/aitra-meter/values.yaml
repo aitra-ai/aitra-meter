@@ -67,7 +67,8 @@ measurementAgent:
     type: vllm
     config:
       endpoint: "http://localhost:8000/metrics"
-  # generic-prometheus example (works with TGI, SGLang, Ollama, Triton, any custom server):
+  # generic-prometheus example (works with TGI, SGLang, Ollama, Triton, any custom server).
+  # TGI:
   # inferenceProvider:
   #   type: generic-prometheus
   #   config:
@@ -75,6 +76,15 @@ measurementAgent:
   #     output_tokens_metric: "tgi_request_generated_tokens_total"
   #     requests_running_metric: "tgi_queue_size"
   #     model_name_label: "model_id"
+  # SGLang (metric names carry a "sglang:" prefix; tensor-parallel deployments
+  # expose one series per rank and the provider sums across them):
+  # inferenceProvider:
+  #   type: generic-prometheus
+  #   config:
+  #     endpoint: "http://localhost:30000/metrics"
+  #     output_tokens_metric: "sglang:generation_tokens_total"
+  #     requests_running_metric: "sglang:num_running_reqs"
+  #     model_name_label: "model_name"
   # CV gate: flag measurements with rolling CV above this threshold
   cvThreshold: 0.03
   cvWindowSize: 100
