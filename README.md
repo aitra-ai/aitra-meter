@@ -1,8 +1,8 @@
 # Aitra Meter
 
-> Open-source Kubernetes-native AI inference energy measurement.
+> A Prometheus exporter for AI inference efficiency.
 
-**J/token** — joules per output token — measured continuously across every workload × model × hardware combination in your cluster.
+Aitra Meter measures **joules per output token (J/token)** — the metric DCGM Exporter and OpenCost do not produce — and exposes it alongside cost and carbon derivations in a format compatible with kube-prometheus-stack. It is open source and Kubernetes-native: J/token is measured continuously across every workload × model × hardware combination in your cluster.
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![SODA Foundation](https://img.shields.io/badge/SODA-Foundation-teal.svg)](https://github.com/sodafoundation)
@@ -11,6 +11,17 @@
 [![Release](https://img.shields.io/github/v/release/aitra-ai/aitra-meter)](https://github.com/aitra-ai/aitra-meter/releases/latest)
 
 ---
+
+## Where it fits
+
+| Tool | What it gives you |
+|---|---|
+| [DCGM Exporter](https://github.com/NVIDIA/dcgm-exporter) | GPU hardware metrics |
+| [kube-state-metrics](https://github.com/kubernetes/kube-state-metrics) | Kubernetes resource state |
+| [OpenCost](https://opencost.io/) | GPU-hour cost |
+| **Aitra Meter** | AI output efficiency (J/token, $/1M tokens, gCO₂/token) |
+
+These tools are complementary, not competing — a GPU cluster typically runs several of them side by side. If a shorthand helps: think of Aitra Meter like OpenCost, but measuring output efficiency rather than cloud spend. See [positioning](docs/concepts/positioning.md) for the distinction from each adjacent tool, and the [OpenCost integration guide](docs/guides/opencost-integration.md) for running both together.
 
 ## What it does
 
@@ -56,6 +67,7 @@ See the [getting started guide](docs/guides/getting-started.md) for a complete w
 GPU hardware
   └─ NVML (default — NVIDIA GPUs, pure Go, no sidecar)
   └─ AMD (AMD GPUs via libamd_smi.so, ROCm 6.x+)
+  └─ DCGM (clusters already running dcgm-exporter)
   └─ Zeus (community extension — operators running zeusd)
 
 Inference servers
@@ -103,6 +115,17 @@ Full metrics reference: [docs/reference/metrics.md](docs/reference/metrics.md)
 | 4. Idle consumption | How much energy is consumed while producing no tokens? |
 | 5. Carbon and cost | What is the carbon and energy cost per token? |
 
+## Grafana dashboards
+
+Four dashboard JSON files ship in `helm/aitra-meter/files/`. Set `grafana.enabled=true` to auto-provision them via the Grafana sidecar (no manual import); they also import manually.
+
+| Dashboard | uid | Audience |
+|---|---|---|
+| Aitra Meter (overview) | `aitra-meter-v1` | Everyone — J/token, tokens/J, idle ratio, measurement CV, $/M tokens |
+| Cost Attribution | `aitra-cost-attribution` | FinOps — cost by model, namespace/tenant, cluster; chargeback table |
+| AI Efficiency | `aitra-efficiency` | Infrastructure — tokens/s per watt, serving utilisation, J/token, TTFT/TPOT P95 (vLLM passthrough) |
+| Hardware Efficiency Comparison | `aitra-hardware-efficiency` | Capacity planning — J/token and $/M tokens across GPU types; needs ≥2 `hardware` label values |
+
 ## CNCF integrations
 
 | Project | Integration |
@@ -137,6 +160,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for full guidance.
 - [OpenCost integration](docs/guides/opencost-integration.md)
 - [Troubleshooting](docs/guides/troubleshooting.md)
 
+### Concepts
+- [Positioning](docs/concepts/positioning.md) — where Aitra Meter fits next to DCGM Exporter, kube-state-metrics, OpenCost, and Kepler
+
 ### Reference
 - [Metrics reference](docs/reference/metrics.md) — all Prometheus metrics, types, labels
 - [Configuration reference](docs/reference/configuration.md) — all Helm values and CRD fields
@@ -157,7 +183,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for full guidance.
 
 ## Project status
 
-Single-cluster measurement is complete and hardware-validated. This project follows semantic versioning. Pre-1.0 minor versions may include interface changes — see the [changelog](CHANGELOG.md) and [roadmap](ROADMAP.md).
+Single-cluster measurement is complete as of the v0.2.x series: measurement agent with NVML (default), AMD, Zeus, and DCGM energy providers; aggregation service with CV gating, attribution, and calibration; six-view dashboard; Helm chart; pre-built Grafana dashboard; opt-in OTLP export. Hardware validation on H100 SXM5 at the XFusion Singapore Open Lab is in progress.
+
+This project follows semantic versioning. Pre-1.0 minor versions may include interface changes — see the [changelog](CHANGELOG.md) and [roadmap](ROADMAP.md).
 
 ## Governance
 

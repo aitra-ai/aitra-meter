@@ -4,23 +4,24 @@ Aitra Meter uses [GitHub Issues](https://github.com/aitra-ai/aitra-meter/issues)
 
 ---
 
-## Current — v0.2.4
+## Current — v0.2.x
 
-- Measurement agent (DaemonSet) with NVML (default), AMD, and Zeus energy providers
+Shipped on `main` (latest tag v0.2.4 plus unreleased items — see the [changelog](CHANGELOG.md)):
+
+- Measurement agent (DaemonSet) with NVML (default), AMD, Zeus, and DCGM energy providers
 - vLLM and generic-prometheus inference providers — compatible with TGI, SGLang, Ollama, Triton
 - Aggregation service with CV gating, attribution resolution, and calibration tier lookup
 - SQLite storage — embedded, pure Go, no CGO, no server
 - Six dashboard views: J/token live table, cluster trend, series trend, namespace chargeback, idle consumption, carbon and cost
-- Prometheus metrics with ServiceMonitor auto-registration
+- Prometheus metrics with ServiceMonitor auto-registration, including cost and carbon derivations (`aitra_cost_per_million_tokens_usd`, `aitra_co2_per_token_grams`)
 - OTLP export of `gen_ai.infrastructure.energy.*` metrics (opt-in)
-- Pre-built Grafana dashboard and reference alerting rules
+- Pre-built Grafana dashboard, reference alerting rules, and per-namespace cost budgets
+- KEDA and OpenCost integrations — reference ScaledObjects, combined cost panel, integration guides
 
 ---
 
 ## Current focus
 
-- KEDA and OpenCost integrations — ScaledObjects, combined cost panel, integration guides
-- DCGM energy provider — enterprise clusters running `dcgm-exporter` alongside NVML
 - Hardware validation on H100 SXM5 at XFusion Singapore Open Lab
 - GPU CI runner registration for continuous hardware validation
 - Live demo environment ahead of KubeCon + CloudNativeCon Japan, July 2026
@@ -31,7 +32,7 @@ Aitra Meter uses [GitHub Issues](https://github.com/aitra-ai/aitra-meter/issues)
 ## Near-term
 
 - **Prefill / decode energy separation** — `aitra_j_per_prefill_token` and `aitra_j_per_decode_token` as separate series. Pending vLLM per-phase instrumentation.
-- **Aitra Benchmark publication** — first reference dataset for J/token across common models and hardware. Interim calibration reference is ML.ENERGY v3.0.
+- **Aitra Benchmark publication** — a first-party reference dataset for J/token across common models and hardware. Interim calibration reference is ML.ENERGY v3.0.
 - **Self-calibrated tier** — populated from community production measurements after 1,000 measurement windows per combination.
 - **Per-request attribution** — requires Aitra Gateway in the request path for request-level token and energy correlation.
 - **MIG support — detection and topology** — identify MIG-enabled GPUs, expose topology in the DaemonSet agent, label workloads by MIG instance.
