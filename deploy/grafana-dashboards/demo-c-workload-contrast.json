@@ -24,7 +24,7 @@
       "id": 20,
       "type": "timeseries",
       "title": "J/token by workload shape",
-      "description": "One Qwen2.5-7B, three GPUs, three traffic shapes. Aggregate J/token differs BECAUSE the prefill/decode ratio differs — this is NOT per-phase energy measurement.",
+      "description": "One Qwen3.5-9B, three GPUs, three traffic shapes. Aggregate J/token differs BECAUSE the prefill/decode ratio differs — this is NOT per-phase energy measurement.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -71,7 +71,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "aitra_j_per_token{model=~\"qwen2.5-7b-summarize|qwen2.5-7b-generate|qwen2.5-7b-chat\"}",
+          "expr": "aitra_j_per_token{model=~\"qwen3.5-9b-summarize|qwen3.5-9b-generate|qwen3.5-9b-chat\"}",
           "legendFormat": "{{model}}",
           "refId": "A"
         }
@@ -126,7 +126,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "max(aitra_j_per_token{model=~\"qwen2.5-7b-summarize|qwen2.5-7b-generate|qwen2.5-7b-chat\"}) / min(aitra_j_per_token{model=~\"qwen2.5-7b-summarize|qwen2.5-7b-generate|qwen2.5-7b-chat\"})",
+          "expr": "max(aitra_j_per_token{model=~\"qwen3.5-9b-summarize|qwen3.5-9b-generate|qwen3.5-9b-chat\"}) / min(aitra_j_per_token{model=~\"qwen3.5-9b-summarize|qwen3.5-9b-generate|qwen3.5-9b-chat\"})",
           "legendFormat": "×",
           "refId": "A"
         }
@@ -293,8 +293,8 @@
         "multi": false,
         "current": {
           "selected": true,
-          "text": "qwen2.5-7b",
-          "value": "qwen2.5-7b"
+          "text": "qwen3.5-9b",
+          "value": "qwen3.5-9b"
         },
         "sort": 1,
         "label": "Sweep model"

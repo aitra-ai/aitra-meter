@@ -1,11 +1,11 @@
 # Demo C Panel 1 — workload-shape contrast.
 #
-# ONE model (Qwen2.5-7B) deployed three times on three GPUs with three served
+# ONE model (Qwen3.5-9B) deployed three times on three GPUs with three served
 # names. Same weights, same hardware — the only difference is the traffic
 # shape driven at each endpoint (see the demo runbook):
-#   qwen2.5-7b-summarize : long-context prompt, short completion (prefill-heavy)
-#   qwen2.5-7b-generate  : short prompt, long completion (decode-heavy)
-#   qwen2.5-7b-chat      : balanced chat
+#   qwen3.5-9b-summarize : long-context prompt, short completion (prefill-heavy)
+#   qwen3.5-9b-generate  : short prompt, long completion (decode-heavy)
+#   qwen3.5-9b-chat      : balanced chat
 # Three distinct J/token series with identical model + hardware shows workload
 # shape drives energy, not just model size.
 #
@@ -35,7 +35,7 @@ spec:
       labels:
         app: vllm-shape-summarize
         tier: vllm-shape
-        aitra-ai.github.io/model-name: qwen2.5-7b-summarize
+        aitra-ai.github.io/model-name: qwen3.5-9b-summarize
     spec:
       initContainers:
         - name: fetch-model
@@ -45,9 +45,9 @@ spec:
           command: ["/bin/sh", "/opt/fetch/fetch.sh"]
           env:
             - name: MODEL_REPO
-              value: "Qwen/Qwen2.5-7B-Instruct"
+              value: "Qwen/Qwen3.5-9B"
             - name: MODEL_DIR
-              value: "vllm-7b"   # shared with the fleet's vllm-7b
+              value: "q35-9b"   # shared with the fleet's vllm-q35-9b
           volumeMounts:
             - name: model
               mountPath: /models
@@ -59,9 +59,9 @@ spec:
           imagePullPolicy: Never
           args:
             - --model
-            - /models/vllm-7b
+            - /models/q35-9b
             - --served-model-name
-            - qwen2.5-7b-summarize
+            - qwen3.5-9b-summarize
             - --gpu-memory-utilization
             - "0.90"
             - --max-model-len
@@ -137,7 +137,7 @@ spec:
       labels:
         app: vllm-shape-generate
         tier: vllm-shape
-        aitra-ai.github.io/model-name: qwen2.5-7b-generate
+        aitra-ai.github.io/model-name: qwen3.5-9b-generate
     spec:
       initContainers:
         - name: fetch-model
@@ -147,9 +147,9 @@ spec:
           command: ["/bin/sh", "/opt/fetch/fetch.sh"]
           env:
             - name: MODEL_REPO
-              value: "Qwen/Qwen2.5-7B-Instruct"
+              value: "Qwen/Qwen3.5-9B"
             - name: MODEL_DIR
-              value: "vllm-7b"   # shared with the fleet's vllm-7b
+              value: "q35-9b"   # shared with the fleet's vllm-q35-9b
           volumeMounts:
             - name: model
               mountPath: /models
@@ -161,9 +161,9 @@ spec:
           imagePullPolicy: Never
           args:
             - --model
-            - /models/vllm-7b
+            - /models/q35-9b
             - --served-model-name
-            - qwen2.5-7b-generate
+            - qwen3.5-9b-generate
             - --gpu-memory-utilization
             - "0.90"
             - --max-model-len
@@ -239,7 +239,7 @@ spec:
       labels:
         app: vllm-shape-chat
         tier: vllm-shape
-        aitra-ai.github.io/model-name: qwen2.5-7b-chat
+        aitra-ai.github.io/model-name: qwen3.5-9b-chat
     spec:
       initContainers:
         - name: fetch-model
@@ -249,9 +249,9 @@ spec:
           command: ["/bin/sh", "/opt/fetch/fetch.sh"]
           env:
             - name: MODEL_REPO
-              value: "Qwen/Qwen2.5-7B-Instruct"
+              value: "Qwen/Qwen3.5-9B"
             - name: MODEL_DIR
-              value: "vllm-7b"   # shared with the fleet's vllm-7b
+              value: "q35-9b"   # shared with the fleet's vllm-q35-9b
           volumeMounts:
             - name: model
               mountPath: /models
@@ -263,9 +263,9 @@ spec:
           imagePullPolicy: Never
           args:
             - --model
-            - /models/vllm-7b
+            - /models/q35-9b
             - --served-model-name
-            - qwen2.5-7b-chat
+            - qwen3.5-9b-chat
             - --gpu-memory-utilization
             - "0.90"
             - --max-model-len

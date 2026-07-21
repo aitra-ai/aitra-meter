@@ -29,7 +29,7 @@ kubectl -n $NS create configmap aitra-demo-dashboards \
   --from-file=deploy/grafana-dashboards/ --dry-run=client -o yaml | kubectl apply -f -
 kubectl apply -f deploy/grafana.yaml        # NodePort 30852
 
-# Demo A fleet — START DOWNLOADS EARLY (72B-AWQ ≈ 41 GB via hf-mirror)
+# Demo A fleet — START DOWNLOADS EARLY (Qwen3.5/3.6 lineup ≈ 209 GB; HF via relay, ModelScope fallback)
 kubectl apply -f deploy/vllm-fleet.yaml
 kubectl apply -f deploy/vllm-fleet-loadgen.yaml
 kubectl -n $NS get pods -l tier=vllm-fleet -w
@@ -85,7 +85,7 @@ Drive load per step (lab-side):
 
 ```bash
 vllm bench serve --backend openai --base-url http://vllm-tp.aitra-system:8000 \
-  --model qwen2.5-72b-awq-tp --num-prompts 400 --request-rate 4
+  --model qwen3.6-27b-tp --num-prompts 400 --request-rate 4
 ```
 
 Dashboard: **Demo B: Tensor-Parallel Scaling**. The J/token line steps as TP
@@ -102,16 +102,16 @@ single-tenant fallback too.
 kubectl apply -f deploy/vllm-shape.yaml
 # then three shaped loads (lab-side), one per endpoint:
 vllm bench serve --base-url http://vllm-shape-summarize.aitra-system:8000 \
-  --model qwen2.5-7b-summarize --random-input-len 8192 --random-output-len 64  --num-prompts 300
+  --model qwen3.5-9b-summarize --random-input-len 8192 --random-output-len 64  --num-prompts 300
 vllm bench serve --base-url http://vllm-shape-generate.aitra-system:8000 \
-  --model qwen2.5-7b-generate  --random-input-len 64   --random-output-len 1024 --num-prompts 300
+  --model qwen3.5-9b-generate  --random-input-len 64   --random-output-len 1024 --num-prompts 300
 vllm bench serve --base-url http://vllm-shape-chat.aitra-system:8000 \
-  --model qwen2.5-7b-chat      --random-input-len 512  --random-output-len 256  --num-prompts 300
+  --model qwen3.5-9b-chat      --random-input-len 512  --random-output-len 256  --num-prompts 300
 
-# Panel 2 — concurrency sweep on any one model (e.g. fleet's qwen2.5-7b)
+# Panel 2 — concurrency sweep on any one model (e.g. fleet's qwen3.5-9b)
 for C in 1 2 4 8 16 32 64; do
-  vllm bench serve --base-url http://vllm-7b.aitra-system:8000 \
-    --model qwen2.5-7b --max-concurrency $C --num-prompts $((C*40))
+  vllm bench serve --base-url http://vllm-q35-9b.aitra-system:8000 \
+    --model qwen3.5-9b --max-concurrency $C --num-prompts $((C*40))
   sleep 90   # ≥2 full measurement windows per step
 done
 ```
@@ -132,7 +132,7 @@ kubectl -n aitra-system create secret generic grafana-admin --from-literal=passw
 kubectl -n aitra-system create configmap aitra-demo-dashboards \
   --from-file=deploy/grafana-dashboards/ --dry-run=client -o yaml | kubectl apply -f -
 kubectl apply -f deploy/grafana.yaml       # NodePort 30852 (dashboard app stays on 30851)
-kubectl apply -f deploy/xspark-demo.yaml   # 3B/7B/14B swap set, all replicas=0
+kubectl apply -f deploy/xspark-demo.yaml   # 2B/4B/9B swap set, all replicas=0
 # pre-download all three models once (start each briefly, or run the fetch
 # initContainers by scaling each to 1 and back to 0 after "model ready")
 ```
@@ -140,21 +140,21 @@ kubectl apply -f deploy/xspark-demo.yaml   # 3B/7B/14B swap set, all replicas=0
 Two booth-local segments, no remote link involved:
 
 1. **Model-swap mini-demo** (the zero-config attribution story): scale
-   `vllm-demo` down, `xspark-7b` up → its J/token tile appears by itself;
-   swap 7B → 14B → tile changes; scale to 0 → only the idle series remains.
+   `vllm-demo` down, `xspark-q35-4b` up → its J/token tile appears by itself;
+   swap 4B → 9B → tile changes; scale to 0 → only the idle series remains.
    One GPU, but the same discovery/attribution machinery as the fleet.
 2. **Demo C Panel 2 — concurrency sweep** against the active swap model
    (`vllm bench serve` from inside the vllm pod or any lab host):
 
    ```bash
    for C in 1 2 4 8 16 32; do
-     vllm bench serve --base-url http://xspark-7b.aitra-system:8000 \
-       --model qwen2.5-7b --max-concurrency $C --num-prompts $((C*40))
+     vllm bench serve --base-url http://xspark-q35-4b.aitra-system:8000 \
+       --model qwen3.5-4b --max-concurrency $C --num-prompts $((C*40))
      sleep 90
    done
    ```
 
-3. Optional talking point: same `qwen2.5-7b` runs on both rigs — compare its
+3. Optional talking point: same `qwen3.5-9b`-class model runs on both rigs — compare its
    J/token on A100 vs GB10 (two Grafana tabs). Different hardware, same
    measurement pipeline.
 

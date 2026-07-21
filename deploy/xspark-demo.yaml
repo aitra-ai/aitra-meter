@@ -8,10 +8,10 @@
 # That zero-config appear/disappear is itself the demo.
 #
 #   kubectl -n aitra-system scale deploy vllm-demo --replicas=0   # free the GPU
-#   kubectl -n aitra-system scale deploy xspark-7b --replicas=1
+#   kubectl -n aitra-system scale deploy xspark-q35-4b --replicas=1
 #   ... demo ... then swap:
-#   kubectl -n aitra-system scale deploy xspark-7b --replicas=0
-#   kubectl -n aitra-system scale deploy xspark-14b --replicas=1
+#   kubectl -n aitra-system scale deploy xspark-q35-4b --replicas=0
+#   kubectl -n aitra-system scale deploy xspark-q35-9b --replicas=1
 #
 # GB10 has 128GB unified memory — every size here fits comfortably; only one
 # runs at a time (single GPU). Downloads go through hf-mirror like the fleet.
@@ -66,22 +66,22 @@ data:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: xspark-3b
+  name: xspark-q35-2b
   namespace: aitra-system
   labels:
-    app: xspark-3b
+    app: xspark-q35-2b
     tier: xspark-swap
 spec:
   replicas: 0        # scale exactly one swap model up at a time
   selector:
     matchLabels:
-      app: xspark-3b
+      app: xspark-q35-2b
   template:
     metadata:
       labels:
-        app: xspark-3b
+        app: xspark-q35-2b
         tier: xspark-swap
-        aitra-ai.github.io/model-name: qwen2.5-3b
+        aitra-ai.github.io/model-name: qwen3.5-2b
     spec:
       initContainers:
         - name: fetch-model
@@ -91,9 +91,9 @@ spec:
           command: ["/bin/sh", "/opt/fetch/fetch.sh"]
           env:
             - name: MODEL_REPO
-              value: "Qwen/Qwen2.5-3B-Instruct"
+              value: "Qwen/Qwen3.5-2B"
             - name: MODEL_DIR
-              value: "xspark-3b"
+              value: "xspark-q35-2b"
           volumeMounts:
             - name: model
               mountPath: /models
@@ -105,9 +105,9 @@ spec:
           imagePullPolicy: Never
           args:
             - --model
-            - /models/xspark-3b
+            - /models/xspark-q35-2b
             - --served-model-name
-            - qwen2.5-3b
+            - qwen3.5-2b
             - --gpu-memory-utilization
             - "0.30"
             - --max-model-len
@@ -152,14 +152,14 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: xspark-3b
+  name: xspark-q35-2b
   namespace: aitra-system
   labels:
-    app: xspark-3b
+    app: xspark-q35-2b
     tier: xspark-swap
 spec:
   selector:
-    app: xspark-3b
+    app: xspark-q35-2b
   ports:
     - name: http
       port: 8000
@@ -168,22 +168,22 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: xspark-7b
+  name: xspark-q35-4b
   namespace: aitra-system
   labels:
-    app: xspark-7b
+    app: xspark-q35-4b
     tier: xspark-swap
 spec:
   replicas: 0        # scale exactly one swap model up at a time
   selector:
     matchLabels:
-      app: xspark-7b
+      app: xspark-q35-4b
   template:
     metadata:
       labels:
-        app: xspark-7b
+        app: xspark-q35-4b
         tier: xspark-swap
-        aitra-ai.github.io/model-name: qwen2.5-7b
+        aitra-ai.github.io/model-name: qwen3.5-4b
     spec:
       initContainers:
         - name: fetch-model
@@ -193,9 +193,9 @@ spec:
           command: ["/bin/sh", "/opt/fetch/fetch.sh"]
           env:
             - name: MODEL_REPO
-              value: "Qwen/Qwen2.5-7B-Instruct"
+              value: "Qwen/Qwen3.5-4B"
             - name: MODEL_DIR
-              value: "xspark-7b"
+              value: "xspark-q35-4b"
           volumeMounts:
             - name: model
               mountPath: /models
@@ -207,9 +207,9 @@ spec:
           imagePullPolicy: Never
           args:
             - --model
-            - /models/xspark-7b
+            - /models/xspark-q35-4b
             - --served-model-name
-            - qwen2.5-7b
+            - qwen3.5-4b
             - --gpu-memory-utilization
             - "0.30"
             - --max-model-len
@@ -254,14 +254,14 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: xspark-7b
+  name: xspark-q35-4b
   namespace: aitra-system
   labels:
-    app: xspark-7b
+    app: xspark-q35-4b
     tier: xspark-swap
 spec:
   selector:
-    app: xspark-7b
+    app: xspark-q35-4b
   ports:
     - name: http
       port: 8000
@@ -270,22 +270,22 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: xspark-14b
+  name: xspark-q35-9b
   namespace: aitra-system
   labels:
-    app: xspark-14b
+    app: xspark-q35-9b
     tier: xspark-swap
 spec:
   replicas: 0        # scale exactly one swap model up at a time
   selector:
     matchLabels:
-      app: xspark-14b
+      app: xspark-q35-9b
   template:
     metadata:
       labels:
-        app: xspark-14b
+        app: xspark-q35-9b
         tier: xspark-swap
-        aitra-ai.github.io/model-name: qwen2.5-14b
+        aitra-ai.github.io/model-name: qwen3.5-9b
     spec:
       initContainers:
         - name: fetch-model
@@ -295,9 +295,9 @@ spec:
           command: ["/bin/sh", "/opt/fetch/fetch.sh"]
           env:
             - name: MODEL_REPO
-              value: "Qwen/Qwen2.5-14B-Instruct"
+              value: "Qwen/Qwen3.5-9B"
             - name: MODEL_DIR
-              value: "xspark-14b"
+              value: "xspark-q35-9b"
           volumeMounts:
             - name: model
               mountPath: /models
@@ -309,9 +309,9 @@ spec:
           imagePullPolicy: Never
           args:
             - --model
-            - /models/xspark-14b
+            - /models/xspark-q35-9b
             - --served-model-name
-            - qwen2.5-14b
+            - qwen3.5-9b
             - --gpu-memory-utilization
             - "0.30"
             - --max-model-len
@@ -356,14 +356,14 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: xspark-14b
+  name: xspark-q35-9b
   namespace: aitra-system
   labels:
-    app: xspark-14b
+    app: xspark-q35-9b
     tier: xspark-swap
 spec:
   selector:
-    app: xspark-14b
+    app: xspark-q35-9b
   ports:
     - name: http
       port: 8000

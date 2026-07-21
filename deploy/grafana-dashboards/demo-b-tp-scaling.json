@@ -56,7 +56,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "aitra_j_per_token{model=\"qwen2.5-72b-awq-tp\"}",
+          "expr": "aitra_j_per_token{model=\"qwen3.6-27b-tp\"}",
           "legendFormat": "J/token",
           "refId": "A"
         }
@@ -111,7 +111,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "aitra_gpu_power_watts{gpu_id=\"qwen2.5-72b-awq-tp\"}",
+          "expr": "aitra_gpu_power_watts{gpu_id=\"qwen3.6-27b-tp\"}",
           "legendFormat": "serving W",
           "refId": "A"
         }
@@ -223,7 +223,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "aitra_j_per_token{model=\"qwen2.5-72b-awq-tp\"}",
+          "expr": "aitra_j_per_token{model=\"qwen3.6-27b-tp\"}",
           "legendFormat": "J/token @ TP",
           "refId": "A"
         }
@@ -280,7 +280,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "aitra_gpu_power_watts{gpu_id=\"qwen2.5-72b-awq-tp\"}",
+          "expr": "aitra_gpu_power_watts{gpu_id=\"qwen3.6-27b-tp\"}",
           "legendFormat": "serving ({{gpu_id}})",
           "refId": "A"
         },
@@ -346,7 +346,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(rate(aitra_model_tokens_total{model=\"qwen2.5-72b-awq-tp\"}[2m]))",
+          "expr": "sum(rate(aitra_model_tokens_total{model=\"qwen3.6-27b-tp\"}[2m]))",
           "legendFormat": "tok/s",
           "refId": "A"
         }
