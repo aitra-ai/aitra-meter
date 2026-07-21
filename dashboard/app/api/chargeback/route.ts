@@ -9,6 +9,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { upstreamHeaders } from "@/lib/upstream";
 
 const AGGREGATION_URL =
   process.env.AGGREGATION_URL ?? "http://aitra-meter-aggregation:8080";
@@ -42,6 +43,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   try {
     const res = await fetch(upstream, {
+      headers: upstreamHeaders(),
       next: { revalidate: 0 },
     });
     if (!res.ok) {
