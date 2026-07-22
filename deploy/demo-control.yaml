@@ -77,11 +77,11 @@ data:
              "--endpoint /v1/completions --model %(model)s --tokenizer /models/%(dir)s "
              "--dataset-name random --random-input-len 512 --random-output-len 256 ")
 
-    # Real conversations (ShareGPT v3, 94k human-AI dialogues) — natural
+    # Real conversations (ShareGPT v3 subset, 10k of 94k dialogues — fast startup) — natural
     # length variance, production-shaped traffic.
     BENCH_REAL = ("vllm bench serve --backend openai --base-url http://%(svc)s:8000 "
                   "--endpoint /v1/completions --model %(model)s --tokenizer /models/%(dir)s "
-                  "--dataset-name sharegpt --dataset-path /datasets/sharegpt_v3.json ")
+                  "--dataset-name sharegpt --dataset-path /datasets/sharegpt_10k.json ")
 
     MODES = {
         "sweep": {
