@@ -77,6 +77,12 @@ data:
              "--endpoint /v1/completions --model %(model)s --tokenizer /models/%(dir)s "
              "--dataset-name random --random-input-len 512 --random-output-len 256 ")
 
+    # Real conversations (ShareGPT v3, 94k human-AI dialogues) — natural
+    # length variance, production-shaped traffic.
+    BENCH_REAL = ("vllm bench serve --backend openai --base-url http://%(svc)s:8000 "
+                  "--endpoint /v1/completions --model %(model)s --tokenizer /models/%(dir)s "
+                  "--dataset-name sharegpt --dataset-path /datasets/sharegpt_v3.json ")
+
     MODES = {
         "sweep": {
             "label": "并发扫描 1→32",
@@ -88,6 +94,18 @@ data:
             "label": "高并发恒载 10 分钟",
             "deadline": 900,
             "script": "end=$((SECONDS+600)); while [ $SECONDS -lt $end ]; do " + BENCH +
+                      "--max-concurrency 32 --num-prompts 640; done",
+        },
+        "real-sweep": {
+            "label": "真实对话·并发扫描 1→32",
+            "deadline": 1800,
+            "script": "for C in 1 2 4 8 16 32; do " + BENCH_REAL +
+                      "--max-concurrency $C --num-prompts $((C*30)); sleep 60; done",
+        },
+        "real-steady": {
+            "label": "真实对话·恒载 10 分钟",
+            "deadline": 900,
+            "script": "end=$((SECONDS+600)); while [ $SECONDS -lt $end ]; do " + BENCH_REAL +
                       "--max-concurrency 32 --num-prompts 640; done",
         },
         "burst": {
@@ -160,12 +178,15 @@ data:
                             "imagePullPolicy": "Never",
                             "command": ["/bin/sh", "-c", script],
                             "env": [{"name": "HF_HUB_OFFLINE", "value": "1"}],
-                            "volumeMounts": [{"name": "models", "mountPath": "/models", "readOnly": True}],
+                            "volumeMounts": [{"name": "models", "mountPath": "/models", "readOnly": True},
+                                              {"name": "datasets", "mountPath": "/datasets", "readOnly": True}],
                             "resources": {"requests": {"cpu": "500m", "memory": "1Gi"},
                                            "limits": {"cpu": "4", "memory": "8Gi"}},
                         }],
                         "volumes": [{"name": "models",
-                                     "hostPath": {"path": "/root/aitra-models", "type": "Directory"}}],
+                                     "hostPath": {"path": "/root/aitra-models", "type": "Directory"}},
+                                    {"name": "datasets",
+                                     "hostPath": {"path": "/root/aitra-datasets", "type": "Directory"}}],
                     },
                 },
             },
@@ -291,7 +312,7 @@ data:
       const GRAFANA = localStorage.getItem('grafana_url') || 'https://childhood-texture-sunny-tri.trycloudflare.com';
       document.getElementById('glink').href = GRAFANA + '/d/aitra-demo-c';
       let sel = {model: null, mode: null};
-      const MODE_DESC = {sweep:'并发 1→32 逐档,约 12 分钟', steady32:'32 并发恒载 10 分钟', burst:'满载 30 秒/静默 60 秒 ×8'};
+      const MODE_DESC = {sweep:'随机流量,并发 1→32,约 12 分钟', steady32:'随机流量,32 并发恒载 10 分钟', burst:'满载 30 秒/静默 60 秒 ×8', 'real-sweep':'ShareGPT 真人对话,并发 1→32', 'real-steady':'ShareGPT 真人对话,32 并发恒载'};
 
       function pill(txt, key, group, desc) {
         const d = document.createElement('div');
