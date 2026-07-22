@@ -829,7 +829,10 @@ spec:
             - "4096"   # 61G int4 weights leave little headroom on 80G
             - --limit-mm-per-prompt
             - '{"image": 0, "video": 0}'   # text-only: skip encoder-cache profiling
+            - --enforce-eager              # skip compile/CUDA-graph transient buffers (~2G)
           env:
+            - name: PYTORCH_ALLOC_CONF
+              value: "expandable_segments:True"
             - name: HF_HUB_OFFLINE
               value: "1"
             - name: TRANSFORMERS_OFFLINE
