@@ -95,7 +95,13 @@ data:
         "sharegpt":  {"label": "真实对话", "args": "--dataset-name sharegpt --dataset-path /datasets/sharegpt_10k.json "},
     }
     CONCURRENCY = [1, 4, 8, 16, 32, 64]
-    RUN_SECONDS = 300  # each custom run: 5 minutes
+    # Run durations. "forever" loops until stopped, with a 4h hard ceiling so
+    # a forgotten run cannot own a GPU overnight.
+    DURATIONS = {
+        "5m":      {"label": "5 分钟",  "secs": 300},
+        "30m":     {"label": "30 分钟", "secs": 1800},
+        "forever": {"label": "持续(手动停止,上限 4 小时)", "secs": 14400},
+    }
 
     # Orchestrated scenes (use the selected model + shape)
     SCENES = {
@@ -180,19 +186,27 @@ data:
             return f"{model} 已有任务在跑"
         return None
 
-    def start_custom(model, shape, conc):
-        if model not in MODELS or shape not in SHAPES or conc not in CONCURRENCY:
+    def start_custom(model, shape, conc, duration):
+        if (model not in MODELS or shape not in SHAPES
+                or conc not in CONCURRENCY or duration not in DURATIONS):
             return None, "非法参数(不在白名单)"
         err = guard(model)
         if err:
             return None, err
         svc, mdir = MODELS[model]
         bench = (BASE + SHAPES[shape]["args"]) % {"svc": svc, "model": model, "dir": mdir}
-        script = (f"end=$((SECONDS+{RUN_SECONDS})); while [ $SECONDS -lt $end ]; do "
-                  f"{bench}--max-concurrency {conc} --num-prompts {conc*80}; done")
-        desc = f"{SHAPES[shape]['label']}·并发{conc}·5分钟"
+        d = DURATIONS[duration]
+        if duration == "forever":
+            script = (f"while true; do {bench}--max-concurrency {conc} "
+                      f"--num-prompts {conc*80}; done")
+            deadline = d["secs"]
+        else:
+            script = (f"end=$((SECONDS+{d['secs']})); while [ $SECONDS -lt $end ]; do "
+                      f"{bench}--max-concurrency {conc} --num-prompts {conc*80}; done")
+            deadline = d["secs"] + 240
+        desc = f"{SHAPES[shape]['label']}·并发{conc}·{d['label']}"
         name = f"demo-c{conc}-{shape}-{mdir}-{int(time.time())%100000}".lower().replace(".", "-")
-        make_job(name, model, desc, script, RUN_SECONDS + 240)
+        make_job(name, model, desc, script, deadline)
         return name, None
 
     def start_scene(model, shape, scene):
@@ -279,6 +293,7 @@ data:
                             "models": list(MODELS),
                             "shapes": {k: v["label"] for k, v in SHAPES.items()},
                             "concurrency": CONCURRENCY,
+                            "durations": {k: v["label"] for k, v in DURATIONS.items()},
                             "scenes": {k: v["label"] for k, v in SCENES.items()}})
             else:
                 self._json({"error": "not found"}, 404)
@@ -303,7 +318,8 @@ data:
                             conc = int(body.get("concurrency", 0))
                         except Exception:
                             conc = 0
-                        name, err = start_custom(m, str(body.get("shape", "")), conc)
+                        name, err = start_custom(m, str(body.get("shape", "")), conc,
+                                                 str(body.get("duration", "forever")))
                     if err:
                         errors.append(f"{m}: {err}")
                     else:
@@ -372,9 +388,10 @@ data:
       <div class="card"><div class="lbl">① 模型(可多选——同场景打到多个模型做对比)</div><div class="grid" id="models"></div></div>
       <div class="card"><div class="lbl">② 任务形态</div><div class="grid" id="shapes"></div></div>
       <div class="card"><div class="lbl">③ 并发(同时在飞的请求数)</div><div class="grid narrow" id="conc"></div></div>
+      <div class="card"><div class="lbl">④ 时长</div><div class="grid" id="durs"></div></div>
 
       <div class="row">
-        <button id="go">▶ 启动组合(5 分钟)</button>
+        <button id="go">▶ 启动组合</button>
         <button class="scenebtn" data-scene="sweep">📈 并发扫描 1→32</button>
         <button class="scenebtn" data-scene="burst">💓 脉冲 ×8</button>
         <button id="stop">■ 全部停止</button>
@@ -402,7 +419,7 @@ data:
     <script>
       const GRAFANA = localStorage.getItem('grafana_url') || 'https://childhood-texture-sunny-tri.trycloudflare.com';
       document.getElementById('glink').href = GRAFANA + '/d/aitra-demo-a';
-      let sel = {models: new Set(), shape: 'balanced', concurrency: 8};
+      let sel = {models: new Set(), shape: 'balanced', concurrency: 8, duration: 'forever'};
       const SHAPE_DESC = {balanced:'输入512/输出256', summarize:'输入4096/输出64(重读)', generate:'输入64/输出1024(重写)', sharegpt:'ShareGPT 真人对话'};
 
       function pill(txt, key, group, desc) {
@@ -441,6 +458,12 @@ data:
               if (c === sel.concurrency) p.classList.add('sel');
               cBox.appendChild(p);
             });
+            const dBox = document.getElementById('durs');
+            Object.entries(s.durations).forEach(([k, lbl]) => {
+              const p = pill(lbl, k, 'duration');
+              if (k === sel.duration) p.classList.add('sel');
+              dBox.appendChild(p);
+            });
           }
           const jb = document.getElementById('jobs');
           jb.innerHTML = s.jobs.length ? s.jobs.map(j =>
@@ -477,7 +500,7 @@ data:
         if (!sel.models.size) { say('请先选择至少一个模型(可多选)', 'err'); return; }
         say('启动中…');
         const d = await post('/api/start',
-          {models: [...sel.models], shape: sel.shape, concurrency: sel.concurrency});
+          {models: [...sel.models], shape: sel.shape, concurrency: sel.concurrency, duration: sel.duration});
         report(d); refresh();
       };
       document.querySelectorAll('.scenebtn').forEach(b => b.onclick = async () => {
