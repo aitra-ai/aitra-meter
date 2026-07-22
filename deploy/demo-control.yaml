@@ -1,0 +1,403 @@
+# Demo traffic control panel — LAN-only web UI to trigger predefined load
+# scenarios against the fleet, KubeCon booth edition.
+#
+# Security model (the sol.aitra.ai brief, scaled to LAN):
+#   - whitelisted actions only: 3 modes × 8 models, nothing parameterized
+#   - every job carries activeDeadlineSeconds (hard cap) + TTL cleanup
+#   - one job per model, 3 jobs globally, enforced server-side
+#   - kill switch deletes everything with one click
+#   - RBAC: may create/list/delete batch Jobs in aitra-system and nothing else
+#   - NodePort 30853, INTERNAL NETWORK ONLY — do not tunnel this without auth
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: demo-control
+  namespace: aitra-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: demo-control
+  namespace: aitra-system
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: demo-control
+  namespace: aitra-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: demo-control
+subjects:
+  - kind: ServiceAccount
+    name: demo-control
+    namespace: aitra-system
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: demo-control-app
+  namespace: aitra-system
+data:
+  app.py: |
+    #!/usr/bin/env python3
+    """Demo traffic control panel. Stdlib only. Whitelisted actions only."""
+    import json, os, ssl, time, urllib.request, urllib.error
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+
+    NS = "aitra-system"
+    K8S = "https://kubernetes.default.svc"
+    SA = "/var/run/secrets/kubernetes.io/serviceaccount"
+    PROM = os.environ.get("PROM_URL", "http://aitra-meter-prometheus:9090")
+    VLLM_IMAGE = os.environ.get("VLLM_IMAGE", "vllm/vllm-openai:v0.19.0")
+    MAX_JOBS = 3
+
+    with open(SA + "/token") as f:
+        TOKEN = f.read().strip()
+    SSLCTX = ssl.create_default_context(cafile=SA + "/ca.crt")
+
+    # -------- whitelists --------
+    MODELS = {
+        "qwen3.5-0.8b":            ("vllm-q35-0p8b",     "q35-0p8b"),
+        "qwen3.5-2b":              ("vllm-q35-2b",       "q35-2b"),
+        "qwen3.5-4b":              ("vllm-q35-4b",       "q35-4b"),
+        "qwen3.5-9b":              ("vllm-q35-9b",       "q35-9b"),
+        "qwen3.6-27b":             ("vllm-q36-27b",      "q36-27b"),
+        "qwen3.6-27b-fp8":         ("vllm-q36-27b-fp8",  "q36-27b-fp8"),
+        "qwen3.6-35b-a3b-fp8":     ("vllm-q36-35b-fp8",  "q36-35b-fp8"),
+        "qwen3.5-122b-a10b-int4":  ("vllm-q35-122b-int4","q35-122b-int4"),
+    }
+
+    BENCH = ("vllm bench serve --backend openai --base-url http://%(svc)s:8000 "
+             "--endpoint /v1/completions --model %(model)s --tokenizer /models/%(dir)s "
+             "--dataset-name random --random-input-len 512 --random-output-len 256 ")
+
+    MODES = {
+        "sweep": {
+            "label": "并发扫描 1→32",
+            "deadline": 1500,
+            "script": "for C in 1 2 4 8 16 32; do " + BENCH +
+                      "--max-concurrency $C --num-prompts $((C*30)); sleep 60; done",
+        },
+        "steady32": {
+            "label": "高并发恒载 10 分钟",
+            "deadline": 900,
+            "script": "end=$((SECONDS+600)); while [ $SECONDS -lt $end ]; do " + BENCH +
+                      "--max-concurrency 32 --num-prompts 640; done",
+        },
+        "burst": {
+            "label": "脉冲流量 ×8",
+            "deadline": 1400,
+            "script": "for i in 1 2 3 4 5 6 7 8; do " + BENCH +
+                      "--max-concurrency 32 --num-prompts 120; sleep 60; done",
+        },
+    }
+
+    # -------- k8s helpers --------
+    def k8s(method, path, body=None):
+        req = urllib.request.Request(K8S + path, method=method)
+        req.add_header("Authorization", "Bearer " + TOKEN)
+        req.add_header("Content-Type", "application/json")
+        data = json.dumps(body).encode() if body is not None else None
+        with urllib.request.urlopen(req, data=data, context=SSLCTX, timeout=15) as r:
+            return json.loads(r.read())
+
+    def list_jobs():
+        out = []
+        res = k8s("GET", f"/apis/batch/v1/namespaces/{NS}/jobs?labelSelector=app=demo-load")
+        for j in res.get("items", []):
+            st = j.get("status", {})
+            state = "running"
+            for c in st.get("conditions", []) or []:
+                if c.get("type") == "Complete" and c.get("status") == "True":
+                    state = "done"
+                if c.get("type") == "Failed" and c.get("status") == "True":
+                    state = "failed"
+            if state == "running" and not st.get("active"):
+                state = "pending"
+            out.append({
+                "name": j["metadata"]["name"],
+                "model": j["metadata"]["labels"].get("demo-model", "?"),
+                "mode": j["metadata"]["labels"].get("demo-mode", "?"),
+                "state": state,
+                "started": j["metadata"].get("creationTimestamp", ""),
+            })
+        return out
+
+    def start_job(model, mode):
+        if model not in MODELS or mode not in MODES:
+            return None, "非法参数(不在白名单)"
+        active = [j for j in list_jobs() if j["state"] in ("running", "pending")]
+        if len(active) >= MAX_JOBS:
+            return None, f"已有 {len(active)} 个任务在跑(上限 {MAX_JOBS}),请先停止"
+        if any(j["model"] == model for j in active):
+            return None, f"{model} 已有任务在跑"
+        svc, mdir = MODELS[model]
+        m = MODES[mode]
+        script = m["script"] % {"svc": svc, "model": model, "dir": mdir}
+        name = f"demo-{mode}-{mdir}-{int(time.time())%100000}".lower().replace(".", "-")
+        job = {
+            "apiVersion": "batch/v1", "kind": "Job",
+            "metadata": {"name": name, "namespace": NS,
+                         "labels": {"app": "demo-load", "demo-model": model, "demo-mode": mode}},
+            "spec": {
+                "activeDeadlineSeconds": m["deadline"],
+                "ttlSecondsAfterFinished": 900,
+                "backoffLimit": 0,
+                "template": {
+                    "metadata": {"labels": {"app": "demo-load"}},
+                    "spec": {
+                        "restartPolicy": "Never",
+                        "nodeSelector": {"kubernetes.io/hostname": "xspark"},
+                        "containers": [{
+                            "name": "bench",
+                            "image": VLLM_IMAGE,
+                            "imagePullPolicy": "Never",
+                            "command": ["/bin/sh", "-c", script],
+                            "env": [{"name": "HF_HUB_OFFLINE", "value": "1"}],
+                            "volumeMounts": [{"name": "models", "mountPath": "/models", "readOnly": True}],
+                            "resources": {"requests": {"cpu": "500m", "memory": "1Gi"},
+                                           "limits": {"cpu": "4", "memory": "8Gi"}},
+                        }],
+                        "volumes": [{"name": "models",
+                                     "hostPath": {"path": "/root/aitra-models", "type": "Directory"}}],
+                    },
+                },
+            },
+        }
+        k8s("POST", f"/apis/batch/v1/namespaces/{NS}/jobs", job)
+        return name, None
+
+    def stop_all():
+        n = 0
+        for j in list_jobs():
+            try:
+                k8s("DELETE", f"/apis/batch/v1/namespaces/{NS}/jobs/{j['name']}?propagationPolicy=Background")
+                n += 1
+            except urllib.error.HTTPError:
+                pass
+        return n
+
+    def prom_jpt():
+        try:
+            with urllib.request.urlopen(PROM + "/api/v1/query?query=aitra_j_per_token", timeout=6) as r:
+                res = json.loads(r.read())["data"]["result"]
+            return {x["metric"].get("model", "?"): round(float(x["value"][1]), 2) for x in res}
+        except Exception:
+            return {}
+
+    # -------- http --------
+    with open("/app/index.html", "rb") as f:
+        INDEX = f.read()
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a): pass
+        def _json(self, obj, code=200):
+            b = json.dumps(obj, ensure_ascii=False).encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(b)))
+            self.end_headers()
+            self.wfile.write(b)
+        def do_GET(self):
+            if self.path == "/" or self.path.startswith("/index"):
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(INDEX)))
+                self.end_headers()
+                self.wfile.write(INDEX)
+            elif self.path == "/api/status":
+                self._json({"jobs": list_jobs(), "jpt": prom_jpt(),
+                            "models": list(MODELS), "modes": {k: v["label"] for k, v in MODES.items()}})
+            else:
+                self._json({"error": "not found"}, 404)
+        def do_POST(self):
+            ln = int(self.headers.get("Content-Length", 0) or 0)
+            try:
+                body = json.loads(self.rfile.read(ln) or b"{}")
+            except Exception:
+                body = {}
+            if self.path == "/api/start":
+                name, err = start_job(str(body.get("model", "")), str(body.get("mode", "")))
+                self._json({"error": err} if err else {"started": name}, 400 if err else 200)
+            elif self.path == "/api/stop":
+                self._json({"stopped": stop_all()})
+            else:
+                self._json({"error": "not found"}, 404)
+
+    print("demo-control listening on :8080", flush=True)
+    HTTPServer(("0.0.0.0", 8080), H).serve_forever()
+  index.html: |
+    <!doctype html><html lang="zh"><head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Aitra Meter · 演示流量控制台</title>
+    <style>
+      :root{--bg:#14181A;--surface:#1C2225;--ink:#E8E6E0;--soft:#9AA4A8;--line:#2E3639;
+            --accent:#E8A020;--accent-soft:#3A2F18;--tele:#4FB3B8;--warn:#E0705F;--ok:#5FBF8A}
+      *{box-sizing:border-box}
+      body{margin:0;background:var(--bg);color:var(--ink);
+           font:15px/1.7 "PingFang SC","Microsoft YaHei",system-ui,sans-serif;padding:28px 20px 60px}
+      main{max-width:760px;margin:0 auto}
+      h1{font-size:22px;margin:0 0 4px}
+      .sub{color:var(--soft);font-size:13px;margin-bottom:26px}
+      .card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:18px 20px;margin:14px 0}
+      .lbl{font-size:12px;letter-spacing:.1em;color:var(--accent);font-weight:600;margin-bottom:10px}
+      .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px}
+      .opt{border:1px solid var(--line);border-radius:6px;padding:8px 12px;cursor:pointer;
+           font-family:ui-monospace,Menlo,monospace;font-size:12.5px;text-align:center;user-select:none}
+      .opt.sel{border-color:var(--accent);background:var(--accent-soft);color:var(--accent);font-weight:700}
+      .opt small{display:block;font-family:inherit;color:var(--soft);font-size:11px}
+      .row{display:flex;gap:12px;flex-wrap:wrap;margin-top:18px}
+      button{border:0;border-radius:6px;padding:11px 26px;font-size:15px;font-weight:700;cursor:pointer}
+      #go{background:var(--accent);color:#14181A}
+      #stop{background:transparent;color:var(--warn);border:1px solid var(--warn)}
+      #msg{font-size:13.5px;margin-top:10px;min-height:20px}
+      #msg.err{color:var(--warn)} #msg.ok{color:var(--ok)}
+      table{border-collapse:collapse;width:100%;font-size:13px;font-variant-numeric:tabular-nums}
+      th{color:var(--soft);text-align:left;font-weight:600;font-size:11.5px;letter-spacing:.08em;
+         padding:6px 10px 6px 0;border-bottom:1px solid var(--line)}
+      td{padding:7px 10px 7px 0;border-bottom:1px solid var(--line);
+         font-family:ui-monospace,Menlo,monospace;font-size:12.5px}
+      .st-running{color:var(--ok)} .st-pending{color:var(--accent)} .st-done{color:var(--soft)} .st-failed{color:var(--warn)}
+      a{color:var(--tele)}
+    </style></head><body><main>
+      <h1>⚡ 演示流量控制台</h1>
+      <div class="sub">选模型、选场景、点启动——然后在 <a id="glink" href="#" target="_blank">Grafana Demo 仪表盘</a> 看曲线变化。全部动作为预定义白名单,自动限时,可随时全停。</div>
+
+      <div class="card"><div class="lbl">① 选择模型</div><div class="grid" id="models"></div></div>
+      <div class="card"><div class="lbl">② 选择流量场景</div><div class="grid" id="modes"></div></div>
+
+      <div class="row">
+        <button id="go">▶ 启动</button>
+        <button id="stop">■ 全部停止</button>
+      </div>
+      <div id="msg"></div>
+
+      <div class="card"><div class="lbl">运行中的演示任务</div>
+        <table><thead><tr><th>任务</th><th>模型</th><th>场景</th><th>状态</th></tr></thead>
+        <tbody id="jobs"><tr><td colspan="4" style="color:var(--soft)">加载中…</td></tr></tbody></table>
+      </div>
+
+      <div class="card"><div class="lbl">实时 J/token(30 秒窗口)</div>
+        <table><thead><tr><th>模型</th><th>J/token</th></tr></thead>
+        <tbody id="jpt"></tbody></table>
+      </div>
+    <script>
+      const GRAFANA = localStorage.getItem('grafana_url') || 'https://childhood-texture-sunny-tri.trycloudflare.com';
+      document.getElementById('glink').href = GRAFANA + '/d/aitra-demo-c';
+      let sel = {model: null, mode: null};
+      const MODE_DESC = {sweep:'并发 1→32 逐档,约 12 分钟', steady32:'32 并发恒载 10 分钟', burst:'满载 30 秒/静默 60 秒 ×8'};
+
+      function pill(txt, key, group, desc) {
+        const d = document.createElement('div');
+        d.className = 'opt'; d.innerHTML = txt + (desc ? `<small>${desc}</small>` : '');
+        d.onclick = () => { sel[group] = key;
+          d.parentNode.querySelectorAll('.opt').forEach(x => x.classList.remove('sel'));
+          d.classList.add('sel'); };
+        return d;
+      }
+      async function refresh() {
+        try {
+          const r = await fetch('/api/status'); const s = await r.json();
+          const mBox = document.getElementById('models');
+          if (!mBox.childElementCount) {
+            s.models.forEach(m => mBox.appendChild(pill(m, m, 'model')));
+            const dBox = document.getElementById('modes');
+            Object.entries(s.modes).forEach(([k, lbl]) => dBox.appendChild(pill(lbl, k, 'mode', MODE_DESC[k] || '')));
+          }
+          const jb = document.getElementById('jobs');
+          jb.innerHTML = s.jobs.length ? s.jobs.map(j =>
+            `<tr><td>${j.name}</td><td>${j.model}</td><td>${j.mode}</td><td class="st-${j.state}">${j.state}</td></tr>`
+          ).join('') : '<tr><td colspan="4" style="color:var(--soft)">当前没有演示任务(常驻底噪流量不在此列)</td></tr>';
+          const jt = document.getElementById('jpt');
+          jt.innerHTML = Object.entries(s.jpt).sort((a,b)=>a[1]-b[1]).map(([m,v]) =>
+            `<tr><td>${m}</td><td>${v}</td></tr>`).join('');
+        } catch (e) { /* keep last view */ }
+      }
+      document.getElementById('go').onclick = async () => {
+        const msg = document.getElementById('msg');
+        if (!sel.model || !sel.mode) { msg.textContent = '请先选择模型和场景'; msg.className = 'err'; return; }
+        msg.textContent = '启动中…'; msg.className = '';
+        const r = await fetch('/api/start', {method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify(sel)});
+        const d = await r.json();
+        msg.textContent = d.error ? ('✗ ' + d.error) : ('✓ 已启动 ' + d.started + ' —— 约 1 分钟后曲线开始变化');
+        msg.className = d.error ? 'err' : 'ok';
+        refresh();
+      };
+      document.getElementById('stop').onclick = async () => {
+        const r = await fetch('/api/stop', {method:'POST'});
+        const d = await r.json();
+        const msg = document.getElementById('msg');
+        msg.textContent = '■ 已停止 ' + d.stopped + ' 个任务'; msg.className = 'ok';
+        refresh();
+      };
+      refresh(); setInterval(refresh, 5000);
+    </script></main></body></html>
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-control
+  namespace: aitra-system
+  labels:
+    app: demo-control
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demo-control
+  template:
+    metadata:
+      labels:
+        app: demo-control
+    spec:
+      serviceAccountName: demo-control
+      nodeSelector:
+        kubernetes.io/hostname: xspark
+      containers:
+        - name: panel
+          image: vllm/vllm-openai:v0.19.0
+          imagePullPolicy: Never
+          command: ["python3", "/app/app.py"]
+          env:
+            - name: PROM_URL
+              value: "http://aitra-meter-prometheus:9090"
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: app
+              mountPath: /app
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: app
+          configMap:
+            name: demo-control-app
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-control
+  namespace: aitra-system
+  labels:
+    app: demo-control
+spec:
+  type: NodePort
+  selector:
+    app: demo-control
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      nodePort: 30853
