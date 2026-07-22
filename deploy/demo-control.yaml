@@ -155,7 +155,7 @@ data:
                             "name": "bench",
                             "image": VLLM_IMAGE,
                             "imagePullPolicy": "Never",
-                            "command": ["/bin/sh", "-c", script],
+                            "command": ["/bin/bash", "-c", script],  # scripts use $SECONDS (bash)
                             "env": [{"name": "HF_HUB_OFFLINE", "value": "1"}],
                             "volumeMounts": [{"name": "models", "mountPath": "/models", "readOnly": True},
                                               {"name": "datasets", "mountPath": "/datasets", "readOnly": True}],
