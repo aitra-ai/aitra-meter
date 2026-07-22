@@ -250,11 +250,28 @@ func TestLoopIdleWindowTracking(t *testing.T) {
 }
 
 // TestLoopQuietModelWindow checks a zero-token window from a model pod keeps
-// its power under the model's own series — the pod holds those GPUs, so this
-// is not node idle power.
+// its power under the model's own series (the pod holds those GPUs, so this
+// is not node idle power) and zeroes the model's efficiency gauges instead of
+// freezing them at the last serving value.
 func TestLoopQuietModelWindow(t *testing.T) {
 	const node = "quiet-node"
-	loop, sink := newTestLoop(map[string]PodMeta{}, PolicyConfig{}, nil)
+	loop, sink := newTestLoop(
+		map[string]PodMeta{node + "/llama-3-8b": {Namespace: "prod", Workload: "chat", Precision: "fp16"}},
+		PolicyConfig{DefaultMethod: AttributionDirect},
+		nil,
+	)
+
+	// Serving window first: J/token gets a real value.
+	s := baseReport()
+	s.Node = node
+	if _, err := loop.ReportWindow(context.Background(), s); err != nil {
+		t.Fatalf("ReportWindow(serving): %v", err)
+	}
+	jptLabels := []string{"prod", "chat", "llama-3-8b", "h100", "fp16", "uncalibrated", "direct"}
+	if got := testutil.ToFloat64(metrics.JPerToken.WithLabelValues(jptLabels...)); got <= 0 {
+		t.Fatalf("precondition: serving J/token = %v, want > 0", got)
+	}
+
 	w := baseReport()
 	w.Node = node
 	w.OutputTokens = 0 // loaded but quiet
@@ -266,14 +283,20 @@ func TestLoopQuietModelWindow(t *testing.T) {
 	if ack.Accepted {
 		t.Error("quiet window Accepted = true, want false")
 	}
-	if sink.len() != 0 {
-		t.Errorf("quiet window wrote %d records, want 0", sink.len())
+	if sink.len() != 1 {
+		t.Errorf("store has %d records, want 1 (serving only)", sink.len())
 	}
 	if got := testutil.ToFloat64(metrics.GPUPowerWatts.WithLabelValues(node, w.ModelName)); got != 210.0 {
 		t.Errorf("gpu_power{model} = %v, want 210", got)
 	}
 	if got := testutil.ToFloat64(metrics.IdlePowerWatts.WithLabelValues(node)); got != 0 {
 		t.Errorf("idle_power_watts = %v, want 0 (pod holds the GPUs)", got)
+	}
+	if got := testutil.ToFloat64(metrics.JPerToken.WithLabelValues(jptLabels...)); got != 0 {
+		t.Errorf("quiet J/token = %v, want 0 (no freezing at last value)", got)
+	}
+	if got := testutil.ToFloat64(metrics.TokensPerJoule.WithLabelValues("prod", "chat", "llama-3-8b", "h100")); got != 0 {
+		t.Errorf("quiet tokens/joule = %v, want 0", got)
 	}
 }
 

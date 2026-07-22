@@ -123,6 +123,29 @@ func (l *Loop) ReportWindow(
 				metrics.GPUPowerWatts.DeleteLabelValues(w.Node, "all")
 			}
 		}
+		// A quiet model's efficiency gauges read zero rather than freezing at
+		// the last serving window's value — dashboards must reflect the
+		// current state, and the boundary window when traffic stops is
+		// systematically inflated (hot GPU, few tokens). The next serving
+		// window restores real values. The power series above stays truthful.
+		if w.ModelName != "" {
+			attr := l.resolver.Resolve(ctx, w.Node, w.ModelName)
+			hw := l.hardware.Hardware(ctx, w.Node)
+			cal := l.calibration.Lookup(w.ModelName, hw)
+			metrics.JPerToken.WithLabelValues(
+				attr.Namespace, attr.Workload, w.ModelName, hw,
+				attr.Precision, string(cal.Tier), string(attr.Method),
+			).Set(0)
+			metrics.TokensPerJoule.WithLabelValues(
+				attr.Namespace, attr.Workload, w.ModelName, hw,
+			).Set(0)
+			metrics.GPUUtilizationEfficiency.WithLabelValues(
+				attr.Namespace, attr.Workload, w.ModelName, hw,
+			).Set(0)
+			metrics.ModelEnergyPer1MTokens.WithLabelValues(
+				attr.Namespace, w.ModelName, hw, attr.Workload,
+			).Set(0)
+		}
 		return &measurementv1.WindowAck{Accepted: false}, nil
 	}
 
