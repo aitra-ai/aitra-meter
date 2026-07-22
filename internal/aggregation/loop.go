@@ -98,7 +98,13 @@ func (l *Loop) ReportWindow(
 
 	// Update the per-node serving ratio for both serving and idle windows so the
 	// serving-utilization and idle-time ratios reflect recent activity.
-	servingWindow := w.OutputTokens > 0
+	// A window needs a minimum number of tokens before J/token is meaningful;
+	// boundary windows (traffic just stopped/started, deep-queue overload)
+	// complete a handful of tokens against a hot GPU and read absurdly high.
+	// Below the floor the window is treated as quiet: efficiency reads zero,
+	// power stays truthful.
+	const minServingTokens = 30
+	servingWindow := w.OutputTokens >= minServingTokens
 	servingRatio := l.recordServing(w.Node, servingWindow)
 	metrics.GPUServingUtilizationRatio.WithLabelValues(w.Node).Set(servingRatio)
 	metrics.IdleTimeRatio.WithLabelValues(w.Node).Set(1 - servingRatio)

@@ -189,7 +189,7 @@ data:
         svc, mdir = MODELS[model]
         bench = (BASE + SHAPES[shape]["args"]) % {"svc": svc, "model": model, "dir": mdir}
         script = (f"end=$((SECONDS+{RUN_SECONDS})); while [ $SECONDS -lt $end ]; do "
-                  f"{bench}--max-concurrency {conc} --num-prompts {conc*20}; done")
+                  f"{bench}--max-concurrency {conc} --num-prompts {conc*80}; done")
         desc = f"{SHAPES[shape]['label']}·并发{conc}·5分钟"
         name = f"demo-c{conc}-{shape}-{mdir}-{int(time.time())%100000}".lower().replace(".", "-")
         make_job(name, model, desc, script, RUN_SECONDS + 240)
