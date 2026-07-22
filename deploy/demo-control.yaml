@@ -2,11 +2,13 @@
 # scenarios against the fleet, KubeCon booth edition.
 #
 # Security model (the sol.aitra.ai brief, scaled to LAN):
-#   - whitelisted actions only: 3 modes × 8 models, nothing parameterized
+#   - whitelisted dimensions only: 8 models × 4 task shapes × 6 concurrency
+#     steps + 2 orchestrated scenes; nothing free-form reaches a shell
 #   - every job carries activeDeadlineSeconds (hard cap) + TTL cleanup
 #   - one job per model, 3 jobs globally, enforced server-side
 #   - kill switch deletes everything with one click
-#   - RBAC: may create/list/delete batch Jobs in aitra-system and nothing else
+#   - baseline-loadgen toggle may scale exactly ONE deployment
+#     (vllm-fleet-loadgen), enforced by RBAC resourceNames
 #   - NodePort 30853, INTERNAL NETWORK ONLY — do not tunnel this without auth
 apiVersion: v1
 kind: ServiceAccount
@@ -23,6 +25,14 @@ rules:
   - apiGroups: ["batch"]
     resources: ["jobs"]
     verbs: ["create", "get", "list", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["vllm-fleet-loadgen"]
+    verbs: ["get"]
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale"]
+    resourceNames: ["vllm-fleet-loadgen"]
+    verbs: ["get", "update", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -46,8 +56,8 @@ metadata:
 data:
   app.py: |
     #!/usr/bin/env python3
-    """Demo traffic control panel. Stdlib only. Whitelisted actions only."""
-    import json, os, ssl, time, urllib.request, urllib.error
+    """Demo traffic control panel. Stdlib only. Whitelisted dimensions only."""
+    import json, os, ssl, time, urllib.request, urllib.parse, urllib.error
     from http.server import HTTPServer, BaseHTTPRequestHandler
 
     NS = "aitra-system"
@@ -56,6 +66,7 @@ data:
     PROM = os.environ.get("PROM_URL", "http://aitra-meter-prometheus:9090")
     VLLM_IMAGE = os.environ.get("VLLM_IMAGE", "vllm/vllm-openai:v0.19.0")
     MAX_JOBS = 3
+    LOADGEN = "vllm-fleet-loadgen"
 
     with open(SA + "/token") as f:
         TOKEN = f.read().strip()
@@ -73,54 +84,32 @@ data:
         "qwen3.5-122b-a10b-int4":  ("vllm-q35-122b-int4","q35-122b-int4"),
     }
 
-    BENCH = ("vllm bench serve --backend openai --base-url http://%(svc)s:8000 "
-             "--endpoint /v1/completions --model %(model)s --tokenizer /models/%(dir)s "
-             "--dataset-name random --random-input-len 512 --random-output-len 256 ")
+    BASE = ("vllm bench serve --backend openai --base-url http://%(svc)s:8000 "
+            "--endpoint /v1/completions --model %(model)s --tokenizer /models/%(dir)s ")
 
-    # Real conversations (ShareGPT v3 subset, 10k of 94k dialogues — fast startup) — natural
-    # length variance, production-shaped traffic.
-    BENCH_REAL = ("vllm bench serve --backend openai --base-url http://%(svc)s:8000 "
-                  "--endpoint /v1/completions --model %(model)s --tokenizer /models/%(dir)s "
-                  "--dataset-name sharegpt --dataset-path /datasets/sharegpt_10k.json ")
+    # Task shapes: how each request looks (input tokens / output tokens)
+    SHAPES = {
+        "balanced":  {"label": "均衡对话", "args": "--dataset-name random --random-input-len 512 --random-output-len 256 "},
+        "summarize": {"label": "长文摘要", "args": "--dataset-name random --random-input-len 4096 --random-output-len 64 "},
+        "generate":  {"label": "长文生成", "args": "--dataset-name random --random-input-len 64 --random-output-len 1024 "},
+        "sharegpt":  {"label": "真实对话", "args": "--dataset-name sharegpt --dataset-path /datasets/sharegpt_10k.json "},
+    }
+    CONCURRENCY = [1, 4, 8, 16, 32, 64]
+    RUN_SECONDS = 300  # each custom run: 5 minutes
 
-    MODES = {
-        "sweep": {
-            "label": "并发扫描 1→32",
-            "deadline": 1500,
-            "script": "for C in 1 2 4 8 16 32; do " + BENCH +
-                      "--max-concurrency $C --num-prompts $((C*30)); sleep 60; done",
-        },
-        "steady32": {
-            "label": "高并发恒载 10 分钟",
-            "deadline": 900,
-            "script": "end=$((SECONDS+600)); while [ $SECONDS -lt $end ]; do " + BENCH +
-                      "--max-concurrency 32 --num-prompts 640; done",
-        },
-        "real-sweep": {
-            "label": "真实对话·并发扫描 1→32",
-            "deadline": 1800,
-            "script": "for C in 1 2 4 8 16 32; do " + BENCH_REAL +
-                      "--max-concurrency $C --num-prompts $((C*30)); sleep 60; done",
-        },
-        "real-steady": {
-            "label": "真实对话·恒载 10 分钟",
-            "deadline": 900,
-            "script": "end=$((SECONDS+600)); while [ $SECONDS -lt $end ]; do " + BENCH_REAL +
-                      "--max-concurrency 32 --num-prompts 640; done",
-        },
-        "burst": {
-            "label": "脉冲流量 ×8",
-            "deadline": 1400,
-            "script": "for i in 1 2 3 4 5 6 7 8; do " + BENCH +
-                      "--max-concurrency 32 --num-prompts 120; sleep 60; done",
-        },
+    # Orchestrated scenes (use the selected model + shape)
+    SCENES = {
+        "sweep": {"label": "并发扫描 1→32(约 12 分钟)", "deadline": 1800,
+                  "script": "for C in 1 2 4 8 16 32; do %(bench)s--max-concurrency $C --num-prompts $((C*30)); sleep 60; done"},
+        "burst": {"label": "脉冲流量 ×8(满载 30s/静默 60s)", "deadline": 1400,
+                  "script": "for i in 1 2 3 4 5 6 7 8; do %(bench)s--max-concurrency 32 --num-prompts 120; sleep 60; done"},
     }
 
     # -------- k8s helpers --------
-    def k8s(method, path, body=None):
+    def k8s(method, path, body=None, ctype="application/json"):
         req = urllib.request.Request(K8S + path, method=method)
         req.add_header("Authorization", "Bearer " + TOKEN)
-        req.add_header("Content-Type", "application/json")
+        req.add_header("Content-Type", ctype)
         data = json.dumps(body).encode() if body is not None else None
         with urllib.request.urlopen(req, data=data, context=SSLCTX, timeout=15) as r:
             return json.loads(r.read())
@@ -138,33 +127,23 @@ data:
                     state = "failed"
             if state == "running" and not st.get("active"):
                 state = "pending"
+            ann = j["metadata"].get("annotations") or {}
             out.append({
                 "name": j["metadata"]["name"],
                 "model": j["metadata"]["labels"].get("demo-model", "?"),
-                "mode": j["metadata"]["labels"].get("demo-mode", "?"),
+                "desc": ann.get("demo-desc", "?"),
                 "state": state,
-                "started": j["metadata"].get("creationTimestamp", ""),
             })
         return out
 
-    def start_job(model, mode):
-        if model not in MODELS or mode not in MODES:
-            return None, "非法参数(不在白名单)"
-        active = [j for j in list_jobs() if j["state"] in ("running", "pending")]
-        if len(active) >= MAX_JOBS:
-            return None, f"已有 {len(active)} 个任务在跑(上限 {MAX_JOBS}),请先停止"
-        if any(j["model"] == model for j in active):
-            return None, f"{model} 已有任务在跑"
-        svc, mdir = MODELS[model]
-        m = MODES[mode]
-        script = m["script"] % {"svc": svc, "model": model, "dir": mdir}
-        name = f"demo-{mode}-{mdir}-{int(time.time())%100000}".lower().replace(".", "-")
+    def make_job(name, model, desc, script, deadline):
         job = {
             "apiVersion": "batch/v1", "kind": "Job",
             "metadata": {"name": name, "namespace": NS,
-                         "labels": {"app": "demo-load", "demo-model": model, "demo-mode": mode}},
+                         "labels": {"app": "demo-load", "demo-model": model},
+                         "annotations": {"demo-desc": desc}},
             "spec": {
-                "activeDeadlineSeconds": m["deadline"],
+                "activeDeadlineSeconds": deadline,
                 "ttlSecondsAfterFinished": 900,
                 "backoffLimit": 0,
                 "template": {
@@ -192,6 +171,43 @@ data:
             },
         }
         k8s("POST", f"/apis/batch/v1/namespaces/{NS}/jobs", job)
+
+    def guard(model):
+        active = [j for j in list_jobs() if j["state"] in ("running", "pending")]
+        if len(active) >= MAX_JOBS:
+            return f"已有 {len(active)} 个任务在跑(上限 {MAX_JOBS}),请先停止"
+        if any(j["model"] == model for j in active):
+            return f"{model} 已有任务在跑"
+        return None
+
+    def start_custom(model, shape, conc):
+        if model not in MODELS or shape not in SHAPES or conc not in CONCURRENCY:
+            return None, "非法参数(不在白名单)"
+        err = guard(model)
+        if err:
+            return None, err
+        svc, mdir = MODELS[model]
+        bench = (BASE + SHAPES[shape]["args"]) % {"svc": svc, "model": model, "dir": mdir}
+        script = (f"end=$((SECONDS+{RUN_SECONDS})); while [ $SECONDS -lt $end ]; do "
+                  f"{bench}--max-concurrency {conc} --num-prompts {conc*20}; done")
+        desc = f"{SHAPES[shape]['label']}·并发{conc}·5分钟"
+        name = f"demo-c{conc}-{shape}-{mdir}-{int(time.time())%100000}".lower().replace(".", "-")
+        make_job(name, model, desc, script, RUN_SECONDS + 240)
+        return name, None
+
+    def start_scene(model, shape, scene):
+        if model not in MODELS or shape not in SHAPES or scene not in SCENES:
+            return None, "非法参数(不在白名单)"
+        err = guard(model)
+        if err:
+            return None, err
+        svc, mdir = MODELS[model]
+        bench = (BASE + SHAPES[shape]["args"]) % {"svc": svc, "model": model, "dir": mdir}
+        sc = SCENES[scene]
+        script = sc["script"] % {"bench": bench}
+        desc = f"{sc['label']}·{SHAPES[shape]['label']}"
+        name = f"demo-{scene}-{mdir}-{int(time.time())%100000}".lower().replace(".", "-")
+        make_job(name, model, desc, script, sc["deadline"])
         return name, None
 
     def stop_all():
@@ -204,11 +220,35 @@ data:
                 pass
         return n
 
+    def loadgen_replicas():
+        try:
+            d = k8s("GET", f"/apis/apps/v1/namespaces/{NS}/deployments/{LOADGEN}")
+            return d.get("spec", {}).get("replicas", 0)
+        except Exception:
+            return -1
+
+    def loadgen_set(on):
+        body = {"spec": {"replicas": 1 if on else 0}}
+        k8s("PATCH", f"/apis/apps/v1/namespaces/{NS}/deployments/{LOADGEN}/scale",
+            body, ctype="application/merge-patch+json")
+
+    def prom_query(q):
+        url = PROM + "/api/v1/query?query=" + urllib.parse.quote(q)
+        with urllib.request.urlopen(url, timeout=6) as r:
+            return json.loads(r.read())["data"]["result"]
+
     def prom_jpt():
         try:
-            with urllib.request.urlopen(PROM + "/api/v1/query?query=aitra_j_per_token", timeout=6) as r:
-                res = json.loads(r.read())["data"]["result"]
-            return {x["metric"].get("model", "?"): round(float(x["value"][1]), 2) for x in res}
+            return {x["metric"].get("model", "?"): round(float(x["value"][1]), 2)
+                    for x in prom_query("aitra_j_per_token")}
+        except Exception:
+            return {}
+
+    def prom_power():
+        try:
+            serving = float(prom_query('sum(aitra_gpu_power_watts{gpu_id!="idle"})')[0]["value"][1])
+            idle = float(prom_query("sum(aitra_idle_power_watts)")[0]["value"][1])
+            return {"serving": round(serving), "idle": round(idle)}
         except Exception:
             return {}
 
@@ -217,7 +257,8 @@ data:
         INDEX = f.read()
 
     class H(BaseHTTPRequestHandler):
-        def log_message(self, *a): pass
+        def log_message(self, *a):
+            pass
         def _json(self, obj, code=200):
             b = json.dumps(obj, ensure_ascii=False).encode()
             self.send_response(code)
@@ -233,8 +274,12 @@ data:
                 self.end_headers()
                 self.wfile.write(INDEX)
             elif self.path == "/api/status":
-                self._json({"jobs": list_jobs(), "jpt": prom_jpt(),
-                            "models": list(MODELS), "modes": {k: v["label"] for k, v in MODES.items()}})
+                self._json({"jobs": list_jobs(), "jpt": prom_jpt(), "power": prom_power(),
+                            "loadgen": loadgen_replicas(),
+                            "models": list(MODELS),
+                            "shapes": {k: v["label"] for k, v in SHAPES.items()},
+                            "concurrency": CONCURRENCY,
+                            "scenes": {k: v["label"] for k, v in SCENES.items()}})
             else:
                 self._json({"error": "not found"}, 404)
         def do_POST(self):
@@ -244,10 +289,26 @@ data:
             except Exception:
                 body = {}
             if self.path == "/api/start":
-                name, err = start_job(str(body.get("model", "")), str(body.get("mode", "")))
+                if body.get("scene"):
+                    name, err = start_scene(str(body.get("model", "")),
+                                            str(body.get("shape", "balanced")),
+                                            str(body.get("scene")))
+                else:
+                    try:
+                        conc = int(body.get("concurrency", 0))
+                    except Exception:
+                        conc = 0
+                    name, err = start_custom(str(body.get("model", "")),
+                                             str(body.get("shape", "")), conc)
                 self._json({"error": err} if err else {"started": name}, 400 if err else 200)
             elif self.path == "/api/stop":
                 self._json({"stopped": stop_all()})
+            elif self.path == "/api/loadgen":
+                try:
+                    loadgen_set(bool(body.get("on")))
+                    self._json({"loadgen": loadgen_replicas()})
+                except Exception as e:
+                    self._json({"error": str(e)}, 500)
             else:
                 self._json({"error": "not found"}, 404)
 
@@ -263,20 +324,24 @@ data:
       *{box-sizing:border-box}
       body{margin:0;background:var(--bg);color:var(--ink);
            font:15px/1.7 "PingFang SC","Microsoft YaHei",system-ui,sans-serif;padding:28px 20px 60px}
-      main{max-width:760px;margin:0 auto}
+      main{max-width:780px;margin:0 auto}
       h1{font-size:22px;margin:0 0 4px}
-      .sub{color:var(--soft);font-size:13px;margin-bottom:26px}
-      .card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:18px 20px;margin:14px 0}
+      .sub{color:var(--soft);font-size:13px;margin-bottom:22px}
+      .card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px 20px;margin:12px 0}
       .lbl{font-size:12px;letter-spacing:.1em;color:var(--accent);font-weight:600;margin-bottom:10px}
-      .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px}
-      .opt{border:1px solid var(--line);border-radius:6px;padding:8px 12px;cursor:pointer;
+      .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+      .grid.narrow{grid-template-columns:repeat(auto-fill,minmax(72px,1fr))}
+      .opt{border:1px solid var(--line);border-radius:6px;padding:8px 10px;cursor:pointer;
            font-family:ui-monospace,Menlo,monospace;font-size:12.5px;text-align:center;user-select:none}
       .opt.sel{border-color:var(--accent);background:var(--accent-soft);color:var(--accent);font-weight:700}
-      .opt small{display:block;font-family:inherit;color:var(--soft);font-size:11px}
-      .row{display:flex;gap:12px;flex-wrap:wrap;margin-top:18px}
-      button{border:0;border-radius:6px;padding:11px 26px;font-size:15px;font-weight:700;cursor:pointer}
+      .opt small{display:block;font-family:inherit;color:var(--soft);font-size:10.5px}
+      .row{display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;align-items:center}
+      button{border:0;border-radius:6px;padding:11px 24px;font-size:15px;font-weight:700;cursor:pointer}
       #go{background:var(--accent);color:#14181A}
       #stop{background:transparent;color:var(--warn);border:1px solid var(--warn)}
+      .scenebtn{background:transparent;color:var(--tele);border:1px solid var(--tele);font-size:13px;padding:9px 16px}
+      #lg{background:transparent;border:1px solid var(--soft);color:var(--ink);font-size:13px;padding:9px 16px}
+      #lg.off{border-color:var(--warn);color:var(--warn)}
       #msg{font-size:13.5px;margin-top:10px;min-height:20px}
       #msg.err{color:var(--warn)} #msg.ok{color:var(--ok)}
       table{border-collapse:collapse;width:100%;font-size:13px;font-variant-numeric:tabular-nums}
@@ -285,22 +350,37 @@ data:
       td{padding:7px 10px 7px 0;border-bottom:1px solid var(--line);
          font-family:ui-monospace,Menlo,monospace;font-size:12.5px}
       .st-running{color:var(--ok)} .st-pending{color:var(--accent)} .st-done{color:var(--soft)} .st-failed{color:var(--warn)}
+      .stats{display:flex;gap:26px;flex-wrap:wrap;font-family:ui-monospace,Menlo,monospace;font-size:13px}
+      .stats b{font-size:19px;color:var(--accent)}
       a{color:var(--tele)}
     </style></head><body><main>
       <h1>⚡ 演示流量控制台</h1>
-      <div class="sub">选模型、选场景、点启动——然后在 <a id="glink" href="#" target="_blank">Grafana Demo 仪表盘</a> 看曲线变化。全部动作为预定义白名单,自动限时,可随时全停。</div>
+      <div class="sub">模型 × 任务形态 × 并发,自由组合(每次 5 分钟);或用预排场景。曲线看
+        <a id="glink" href="#" target="_blank">Grafana Demo 仪表盘</a>。</div>
 
-      <div class="card"><div class="lbl">① 选择模型</div><div class="grid" id="models"></div></div>
-      <div class="card"><div class="lbl">② 选择流量场景</div><div class="grid" id="modes"></div></div>
+      <div class="card"><div class="lbl">① 模型</div><div class="grid" id="models"></div></div>
+      <div class="card"><div class="lbl">② 任务形态</div><div class="grid" id="shapes"></div></div>
+      <div class="card"><div class="lbl">③ 并发(同时在飞的请求数)</div><div class="grid narrow" id="conc"></div></div>
 
       <div class="row">
-        <button id="go">▶ 启动</button>
+        <button id="go">▶ 启动组合(5 分钟)</button>
+        <button class="scenebtn" data-scene="sweep">📈 并发扫描 1→32</button>
+        <button class="scenebtn" data-scene="burst">💓 脉冲 ×8</button>
         <button id="stop">■ 全部停止</button>
       </div>
       <div id="msg"></div>
 
-      <div class="card"><div class="lbl">运行中的演示任务</div>
-        <table><thead><tr><th>任务</th><th>模型</th><th>场景</th><th>状态</th></tr></thead>
+      <div class="card"><div class="lbl">空载控制(常驻底噪流量)</div>
+        <div class="row" style="margin-top:4px">
+          <button id="lg">…</button>
+          <span style="font-size:13px;color:var(--soft)">
+            关闭后约 1 分钟:所有模型吞吐归零、进入"占卡静息"状态——演示空载功耗与 serving/idle 对比的入口。</span>
+        </div>
+      </div>
+
+      <div class="card"><div class="lbl">当前状态</div>
+        <div class="stats" id="stats"></div>
+        <table style="margin-top:12px"><thead><tr><th>任务</th><th>模型</th><th>内容</th><th>状态</th></tr></thead>
         <tbody id="jobs"><tr><td colspan="4" style="color:var(--soft)">加载中…</td></tr></tbody></table>
       </div>
 
@@ -310,52 +390,88 @@ data:
       </div>
     <script>
       const GRAFANA = localStorage.getItem('grafana_url') || 'https://childhood-texture-sunny-tri.trycloudflare.com';
-      document.getElementById('glink').href = GRAFANA + '/d/aitra-demo-c';
-      let sel = {model: null, mode: null};
-      const MODE_DESC = {sweep:'随机流量,并发 1→32,约 12 分钟', steady32:'随机流量,32 并发恒载 10 分钟', burst:'满载 30 秒/静默 60 秒 ×8', 'real-sweep':'ShareGPT 真人对话,并发 1→32', 'real-steady':'ShareGPT 真人对话,32 并发恒载'};
+      document.getElementById('glink').href = GRAFANA + '/d/aitra-demo-a';
+      let sel = {model: null, shape: 'balanced', concurrency: 8};
+      const SHAPE_DESC = {balanced:'输入512/输出256', summarize:'输入4096/输出64(重读)', generate:'输入64/输出1024(重写)', sharegpt:'ShareGPT 真人对话'};
 
       function pill(txt, key, group, desc) {
         const d = document.createElement('div');
         d.className = 'opt'; d.innerHTML = txt + (desc ? `<small>${desc}</small>` : '');
-        d.onclick = () => { sel[group] = key;
+        d.dataset.key = key;
+        d.onclick = () => { sel[group] = (group === 'concurrency') ? parseInt(key) : key;
           d.parentNode.querySelectorAll('.opt').forEach(x => x.classList.remove('sel'));
           d.classList.add('sel'); };
         return d;
       }
+      let built = false;
       async function refresh() {
         try {
           const r = await fetch('/api/status'); const s = await r.json();
-          const mBox = document.getElementById('models');
-          if (!mBox.childElementCount) {
+          if (!built) {
+            built = true;
+            const mBox = document.getElementById('models');
             s.models.forEach(m => mBox.appendChild(pill(m, m, 'model')));
-            const dBox = document.getElementById('modes');
-            Object.entries(s.modes).forEach(([k, lbl]) => dBox.appendChild(pill(lbl, k, 'mode', MODE_DESC[k] || '')));
+            const shBox = document.getElementById('shapes');
+            Object.entries(s.shapes).forEach(([k, lbl]) => {
+              const p = pill(lbl, k, 'shape', SHAPE_DESC[k] || '');
+              if (k === sel.shape) p.classList.add('sel');
+              shBox.appendChild(p);
+            });
+            const cBox = document.getElementById('conc');
+            s.concurrency.forEach(c => {
+              const p = pill(String(c), String(c), 'concurrency');
+              if (c === sel.concurrency) p.classList.add('sel');
+              cBox.appendChild(p);
+            });
           }
           const jb = document.getElementById('jobs');
           jb.innerHTML = s.jobs.length ? s.jobs.map(j =>
-            `<tr><td>${j.name}</td><td>${j.model}</td><td>${j.mode}</td><td class="st-${j.state}">${j.state}</td></tr>`
-          ).join('') : '<tr><td colspan="4" style="color:var(--soft)">当前没有演示任务(常驻底噪流量不在此列)</td></tr>';
+            `<tr><td>${j.name}</td><td>${j.model}</td><td>${j.desc}</td><td class="st-${j.state}">${j.state}</td></tr>`
+          ).join('') : '<tr><td colspan="4" style="color:var(--soft)">当前没有演示任务</td></tr>';
           const jt = document.getElementById('jpt');
           jt.innerHTML = Object.entries(s.jpt).sort((a,b)=>a[1]-b[1]).map(([m,v]) =>
             `<tr><td>${m}</td><td>${v}</td></tr>`).join('');
+          const st = document.getElementById('stats');
+          const p = s.power || {};
+          st.innerHTML = `<span>干活功率 <b>${p.serving ?? '—'}</b> W</span>` +
+                         `<span>待机功率 <b>${p.idle ?? '—'}</b> W</span>` +
+                         `<span>底噪流量 <b>${s.loadgen > 0 ? '开' : '关'}</b></span>`;
+          const lg = document.getElementById('lg');
+          lg.textContent = s.loadgen > 0 ? '⏻ 关闭底噪(进入空载)' : '⏻ 打开底噪(恢复常态)';
+          lg.className = s.loadgen > 0 ? '' : 'off';
+          lg.dataset.on = s.loadgen > 0 ? '1' : '0';
         } catch (e) { /* keep last view */ }
       }
+      const msg = document.getElementById('msg');
+      function say(t, cls) { msg.textContent = t; msg.className = cls || ''; }
+      async function post(path, body) {
+        const r = await fetch(path, {method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify(body || {})});
+        return r.json();
+      }
       document.getElementById('go').onclick = async () => {
-        const msg = document.getElementById('msg');
-        if (!sel.model || !sel.mode) { msg.textContent = '请先选择模型和场景'; msg.className = 'err'; return; }
-        msg.textContent = '启动中…'; msg.className = '';
-        const r = await fetch('/api/start', {method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify(sel)});
-        const d = await r.json();
-        msg.textContent = d.error ? ('✗ ' + d.error) : ('✓ 已启动 ' + d.started + ' —— 约 1 分钟后曲线开始变化');
-        msg.className = d.error ? 'err' : 'ok';
+        if (!sel.model) { say('请先选择模型', 'err'); return; }
+        say('启动中…');
+        const d = await post('/api/start', sel);
+        say(d.error ? ('✗ ' + d.error) : ('✓ 已启动 ' + d.started), d.error ? 'err' : 'ok');
         refresh();
       };
+      document.querySelectorAll('.scenebtn').forEach(b => b.onclick = async () => {
+        if (!sel.model) { say('请先选择模型', 'err'); return; }
+        say('启动中…');
+        const d = await post('/api/start', {model: sel.model, shape: sel.shape, scene: b.dataset.scene});
+        say(d.error ? ('✗ ' + d.error) : ('✓ 已启动 ' + d.started), d.error ? 'err' : 'ok');
+        refresh();
+      });
       document.getElementById('stop').onclick = async () => {
-        const r = await fetch('/api/stop', {method:'POST'});
-        const d = await r.json();
-        const msg = document.getElementById('msg');
-        msg.textContent = '■ 已停止 ' + d.stopped + ' 个任务'; msg.className = 'ok';
+        const d = await post('/api/stop');
+        say('■ 已停止 ' + d.stopped + ' 个任务', 'ok'); refresh();
+      };
+      document.getElementById('lg').onclick = async (e) => {
+        const on = e.target.dataset.on === '1';
+        say(on ? '正在关闭底噪流量…' : '正在恢复底噪流量…');
+        const d = await post('/api/loadgen', {on: !on});
+        say(d.error ? ('✗ ' + d.error) : (on ? '✓ 底噪已关——约 1 分钟后看板进入空载形态' : '✓ 底噪已恢复'), d.error ? 'err' : 'ok');
         refresh();
       };
       refresh(); setInterval(refresh, 5000);
