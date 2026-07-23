@@ -89,6 +89,23 @@ measurementAgent:
   cvThreshold: 0.03
   cvWindowSize: 100
 
+  # MIG attribution (nvml energy provider only, docs/reference/mig-support.md).
+  # MIG mode itself is detected automatically by the agent at startup; these
+  # values only refine the labels on the aitra_mig_* metrics and enable the
+  # per-slice cost counter. All optional.
+  mig:
+    # The MIG slice the node's inference server is pinned to, as a
+    # mig_instance label ("mig-1g.10gb:0") or MIG device UUID ("MIG-…", the
+    # CUDA_VISIBLE_DEVICES value of the inference pod). Leave empty to
+    # auto-pin when the node exposes exactly one slice.
+    pinnedInstance: ""
+    # Namespace label for aitra_mig_* token/cost metrics (default "unknown").
+    namespace: ""
+    # Team label for aitra_mig_cost_usd_total (default "unknown").
+    team: ""
+    # Electricity price in USD/kWh; 0 disables aitra_mig_cost_usd_total.
+    electricityCostUSDPerKWh: 0
+
 aggregationService:
   image:
     repository: ghcr.io/aitra-ai/aitra-meter/aggregation-service

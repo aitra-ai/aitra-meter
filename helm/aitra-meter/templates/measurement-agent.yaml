@@ -44,6 +44,20 @@ spec:
             - --inference-provider={{ .Values.measurementAgent.inferenceProvider.type }}
             - --aggregator={{ include "aitra-meter.fullname" . }}-aggregation-service:9091
             - --log-level=info
+            {{- with .Values.measurementAgent.mig }}
+            {{- if .pinnedInstance }}
+            - --mig-instance={{ .pinnedInstance }}
+            {{- end }}
+            {{- if .namespace }}
+            - --mig-namespace={{ .namespace }}
+            {{- end }}
+            {{- if .team }}
+            - --mig-team={{ .team }}
+            {{- end }}
+            {{- if .electricityCostUSDPerKWh }}
+            - --electricity-cost-usd-per-kwh={{ .electricityCostUSDPerKWh }}
+            {{- end }}
+            {{- end }}
           env:
             - name: NODE_NAME
               valueFrom:

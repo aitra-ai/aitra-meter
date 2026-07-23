@@ -29,9 +29,16 @@ func init() {
 
 // NVMLProvider implements provider.EnergyProvider using direct NVML bindings.
 // No Python dependency. NVIDIA GPUs only.
+//
+// When MIG mode is detected at init, the provider also implements
+// provider.MIGEnergyProvider (see mig_nvml.go) and tracks per-slice energy
+// alongside the node total.
 type NVMLProvider struct {
 	mu      sync.Mutex
 	windows map[string]*window
+
+	// mig is non-nil when at least one GPU has MIG mode enabled.
+	mig *migTracker
 }
 
 type window struct {
@@ -45,6 +52,9 @@ func (n *NVMLProvider) init() error {
 		return fmt.Errorf("nvml.Init: %s", gonvml.ErrorString(ret))
 	}
 	n.windows = make(map[string]*window)
+	if detectMIGMode() {
+		n.mig = newMIGTracker(nvmlMIGReader{})
+	}
 	return nil
 }
 
@@ -58,6 +68,11 @@ func (n *NVMLProvider) BeginWindow(ctx context.Context, windowID string) error {
 	n.mu.Lock()
 	n.windows[windowID] = &window{startTime: time.Now(), startEnergy: energy}
 	n.mu.Unlock()
+	if n.mig != nil {
+		// Best effort: a failed MIG snapshot must not fail the node-total
+		// measurement. EndWindowMIG returns an empty slice list in that case.
+		_ = n.mig.beginWindow(windowID)
+	}
 	return nil
 }
 

@@ -77,6 +77,65 @@ Metrics are exposed at:
 
 ---
 
+### MIG attribution metrics (#43)
+
+Exposed by the measurement agent on nodes where MIG mode is detected
+(`nvml` energy provider only). Per-slice energy is **attributed** — the
+parent GPU's measured energy split by compute-slice fraction — not measured
+per slice; see [MIG support](mig-support.md) for the model, its limitations,
+and the (pending) hardware validation status.
+
+Shared labels: `node` (Kubernetes node name), `gpu_uuid` (UUID of the parent
+physical GPU), `mig_instance` (DCGM-style slice label, e.g. `mig-1g.10gb:0`).
+
+### `aitra_mig_j_per_token`
+
+**Type:** Gauge  
+**Source:** Measurement agent  
+**Description:** Joules per output token for the pinned MIG slice over the last measurement window.
+
+| Label | Description |
+|---|---|
+| `node`, `gpu_uuid`, `mig_instance` | See above |
+| `namespace` | Namespace of the pinned inference pod (`--mig-namespace`, default `unknown`) |
+| `model` | Model name from the inference provider |
+
+---
+
+### `aitra_mig_tokens_total`
+
+**Type:** Counter  
+**Source:** Measurement agent  
+**Description:** Cumulative output tokens attributed to a MIG slice. Same labels as `aitra_mig_j_per_token`.
+
+---
+
+### `aitra_mig_cost_usd_total`
+
+**Type:** Counter  
+**Source:** Measurement agent  
+**Description:** Cumulative energy cost in USD attributed to a MIG slice. Absent unless the agent is started with `--electricity-cost-usd-per-kwh > 0`.
+
+| Label | Description |
+|---|---|
+| `node`, `gpu_uuid`, `mig_instance` | See above |
+| `namespace` | Namespace label (default `unknown`) |
+| `team` | Team label (`--mig-team`, default `unknown`) |
+
+---
+
+### `aitra_mig_power_watts`
+
+**Type:** Gauge  
+**Source:** Measurement agent  
+**Description:** Power in watts attributed to a MIG slice: parent GPU window energy split by compute-slice fraction, divided by window duration. Recorded for every slice, pinned or not.
+
+| Label | Description |
+|---|---|
+| `node`, `gpu_uuid`, `mig_instance` | See above |
+
+---
+
 ## Aggregation service metrics
 
 ### `aitra_j_per_token`
