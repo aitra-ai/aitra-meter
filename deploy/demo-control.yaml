@@ -1,15 +1,17 @@
-# Demo traffic control panel — LAN-only web UI to trigger predefined load
-# scenarios against the fleet, KubeCon booth edition.
+# Demo traffic control panel — web UI to trigger predefined load scenarios
+# against the fleet, KubeCon booth edition. Bilingual (zh/EN).
 #
-# Security model (the sol.aitra.ai brief, scaled to LAN):
+# Security model (the sol.aitra.ai brief, demo-scaled):
+#   - access key required when ACCESS_KEY is set (Secret demo-control-key):
+#     share the link as https://<tunnel>/?k=<key>; cookie persists it.
+#     Without the key: a login page and 401s. LAN without the Secret = open.
 #   - whitelisted dimensions only: 8 models × 4 task shapes × 6 concurrency
-#     steps + 2 orchestrated scenes; nothing free-form reaches a shell
+#     steps × 3 durations + 2 orchestrated scenes; nothing free-form
 #   - every job carries activeDeadlineSeconds (hard cap) + TTL cleanup
 #   - one job per model, 8 jobs globally, enforced server-side
 #   - kill switch deletes everything with one click
-#   - baseline-loadgen toggle may scale exactly ONE deployment
-#     (vllm-fleet-loadgen), enforced by RBAC resourceNames
-#   - NodePort 30853, INTERNAL NETWORK ONLY — do not tunnel this without auth
+#   - baseline-loadgen toggle may scale exactly ONE deployment (RBAC
+#     resourceNames)
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -65,7 +67,8 @@ data:
     SA = "/var/run/secrets/kubernetes.io/serviceaccount"
     PROM = os.environ.get("PROM_URL", "http://aitra-meter-prometheus:9090")
     VLLM_IMAGE = os.environ.get("VLLM_IMAGE", "vllm/vllm-openai:v0.19.0")
-    MAX_JOBS = 8   # allow whole-fleet comparisons
+    ACCESS_KEY = os.environ.get("ACCESS_KEY", "")
+    MAX_JOBS = 8
     LOADGEN = "vllm-fleet-loadgen"
 
     with open(SA + "/token") as f:
@@ -87,27 +90,26 @@ data:
     BASE = ("vllm bench serve --backend openai --base-url http://%(svc)s:8000 "
             "--endpoint /v1/completions --model %(model)s --tokenizer /models/%(dir)s ")
 
-    # Task shapes: how each request looks (input tokens / output tokens)
     SHAPES = {
-        "balanced":  {"label": "均衡对话", "args": "--dataset-name random --random-input-len 512 --random-output-len 256 "},
-        "summarize": {"label": "长文摘要", "args": "--dataset-name random --random-input-len 4096 --random-output-len 64 "},
-        "generate":  {"label": "长文生成", "args": "--dataset-name random --random-input-len 64 --random-output-len 1024 "},
-        "sharegpt":  {"label": "真实对话", "args": "--dataset-name sharegpt --dataset-path /datasets/sharegpt_10k.json "},
+        "balanced":  {"zh": "均衡对话", "en": "Balanced chat",
+                      "args": "--dataset-name random --random-input-len 512 --random-output-len 256 "},
+        "summarize": {"zh": "长文摘要", "en": "Long-doc summarize",
+                      "args": "--dataset-name random --random-input-len 4096 --random-output-len 64 "},
+        "generate":  {"zh": "长文生成", "en": "Long-form generate",
+                      "args": "--dataset-name random --random-input-len 64 --random-output-len 1024 "},
+        "sharegpt":  {"zh": "真实对话", "en": "Real conversations",
+                      "args": "--dataset-name sharegpt --dataset-path /datasets/sharegpt_10k.json "},
     }
     CONCURRENCY = [1, 4, 8, 16, 32, 64]
-    # Run durations. "forever" loops until stopped, with a 4h hard ceiling so
-    # a forgotten run cannot own a GPU overnight.
     DURATIONS = {
-        "5m":      {"label": "5 分钟",  "secs": 300},
-        "30m":     {"label": "30 分钟", "secs": 1800},
-        "forever": {"label": "持续(手动停止,上限 4 小时)", "secs": 14400},
+        "5m":      {"zh": "5 分钟",  "en": "5 min",  "secs": 300},
+        "30m":     {"zh": "30 分钟", "en": "30 min", "secs": 1800},
+        "forever": {"zh": "持续(手动停止,上限 4 小时)", "en": "Continuous (stop manually, 4 h cap)", "secs": 14400},
     }
-
-    # Orchestrated scenes (use the selected model + shape)
     SCENES = {
-        "sweep": {"label": "并发扫描 1→32(约 12 分钟)", "deadline": 1800,
+        "sweep": {"zh": "并发扫描 1→32(约 12 分钟)", "en": "Concurrency sweep 1→32 (~12 min)", "deadline": 1800,
                   "script": "for C in 1 2 4 8 16 32; do %(bench)s--max-concurrency $C --num-prompts $((C*30)); sleep 60; done"},
-        "burst": {"label": "脉冲流量 ×8(满载 30s/静默 60s)", "deadline": 1400,
+        "burst": {"zh": "脉冲流量 ×8(满载 30s/静默 60s)", "en": "Burst ×8 (30 s load / 60 s quiet)", "deadline": 1400,
                   "script": "for i in 1 2 3 4 5 6 7 8; do %(bench)s--max-concurrency 32 --num-prompts 120; sleep 60; done"},
     }
 
@@ -161,7 +163,7 @@ data:
                             "name": "bench",
                             "image": VLLM_IMAGE,
                             "imagePullPolicy": "Never",
-                            "command": ["/bin/bash", "-c", script],  # scripts use $SECONDS (bash)
+                            "command": ["/bin/bash", "-c", script],
                             "env": [{"name": "HF_HUB_OFFLINE", "value": "1"}],
                             "volumeMounts": [{"name": "models", "mountPath": "/models", "readOnly": True},
                                               {"name": "datasets", "mountPath": "/datasets", "readOnly": True}],
@@ -181,15 +183,15 @@ data:
     def guard(model):
         active = [j for j in list_jobs() if j["state"] in ("running", "pending")]
         if len(active) >= MAX_JOBS:
-            return f"已有 {len(active)} 个任务在跑(上限 {MAX_JOBS}),请先停止"
+            return f"busy: {len(active)}/{MAX_JOBS} jobs running · 任务已满,请先停止"
         if any(j["model"] == model for j in active):
-            return f"{model} 已有任务在跑"
+            return "already running · 该模型已有任务"
         return None
 
     def start_custom(model, shape, conc, duration):
         if (model not in MODELS or shape not in SHAPES
                 or conc not in CONCURRENCY or duration not in DURATIONS):
-            return None, "非法参数(不在白名单)"
+            return None, "invalid parameters · 非法参数"
         err = guard(model)
         if err:
             return None, err
@@ -204,14 +206,14 @@ data:
             script = (f"end=$((SECONDS+{d['secs']})); while [ $SECONDS -lt $end ]; do "
                       f"{bench}--max-concurrency {conc} --num-prompts {conc*80}; done")
             deadline = d["secs"] + 240
-        desc = f"{SHAPES[shape]['label']}·并发{conc}·{d['label']}"
+        desc = f"{shape} · c{conc} · {duration}"
         name = f"demo-c{conc}-{shape}-{mdir}-{int(time.time())%100000}".lower().replace(".", "-")
         make_job(name, model, desc, script, deadline)
         return name, None
 
     def start_scene(model, shape, scene):
         if model not in MODELS or shape not in SHAPES or scene not in SCENES:
-            return None, "非法参数(不在白名单)"
+            return None, "invalid parameters · 非法参数"
         err = guard(model)
         if err:
             return None, err
@@ -219,7 +221,7 @@ data:
         bench = (BASE + SHAPES[shape]["args"]) % {"svc": svc, "model": model, "dir": mdir}
         sc = SCENES[scene]
         script = sc["script"] % {"bench": bench}
-        desc = f"{sc['label']}·{SHAPES[shape]['label']}"
+        desc = f"{scene} · {shape}"
         name = f"demo-{scene}-{mdir}-{int(time.time())%100000}".lower().replace(".", "-")
         make_job(name, model, desc, script, sc["deadline"])
         return name, None
@@ -270,6 +272,34 @@ data:
     with open("/app/index.html", "rb") as f:
         INDEX = f.read()
 
+    LOGIN = ("""<!doctype html><html><head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1"><title>Aitra Demo Control</title>
+    <style>body{background:#14181A;color:#E8E6E0;font:16px system-ui;display:flex;align-items:center;
+    justify-content:center;height:100vh;margin:0}form{text-align:center}
+    input{padding:10px 14px;font-size:15px;border-radius:6px;border:1px solid #2E3639;
+    background:#1C2225;color:#E8E6E0;width:240px}
+    button{padding:10px 22px;margin-left:8px;border-radius:6px;border:0;background:#E8A020;
+    font-weight:700;cursor:pointer}</style></head><body>
+    <form method="get" action="/"><div style="font-size:22px;margin-bottom:6px">⚡ Aitra Demo Control</div>
+    <div style="color:#9AA4A8;margin-bottom:18px">Access key required · 需要访问密钥</div>
+    <input name="k" placeholder="access key / 访问密钥" autofocus>
+    <button>Enter</button></form></body></html>""").encode()
+
+    def cookie_key(handler):
+        c = handler.headers.get("Cookie", "") or ""
+        for part in c.split(";"):
+            k, _, v = part.strip().partition("=")
+            if k == "dk":
+                return v
+        return ""
+
+    def authed(handler):
+        if not ACCESS_KEY:
+            return True
+        if handler.headers.get("X-Demo-Key", "") == ACCESS_KEY:
+            return True
+        return cookie_key(handler) == ACCESS_KEY
+
     class H(BaseHTTPRequestHandler):
         def log_message(self, *a):
             pass
@@ -280,24 +310,44 @@ data:
             self.send_header("Content-Length", str(len(b)))
             self.end_headers()
             self.wfile.write(b)
+        def _page(self, body, code=200, extra_headers=None):
+            self.send_response(code)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            for k, v in (extra_headers or []):
+                self.send_header(k, v)
+            self.end_headers()
+            self.wfile.write(body)
         def do_GET(self):
-            if self.path == "/" or self.path.startswith("/index"):
-                self.send_response(200)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
-                self.send_header("Content-Length", str(len(INDEX)))
-                self.end_headers()
-                self.wfile.write(INDEX)
-            elif self.path == "/api/status":
+            parsed = urllib.parse.urlparse(self.path)
+            if parsed.path == "/" or parsed.path.startswith("/index"):
+                qs = urllib.parse.parse_qs(parsed.query)
+                key = (qs.get("k") or [""])[0]
+                if ACCESS_KEY and key == ACCESS_KEY:
+                    self._page(INDEX, extra_headers=[
+                        ("Set-Cookie", f"dk={ACCESS_KEY}; Path=/; Max-Age=604800; SameSite=Lax")])
+                    return
+                if authed(self):
+                    self._page(INDEX)
+                else:
+                    self._page(LOGIN, 401)
+            elif parsed.path == "/api/status":
+                if not authed(self):
+                    self._json({"error": "unauthorized"}, 401)
+                    return
                 self._json({"jobs": list_jobs(), "jpt": prom_jpt(), "power": prom_power(),
                             "loadgen": loadgen_replicas(),
                             "models": list(MODELS),
-                            "shapes": {k: v["label"] for k, v in SHAPES.items()},
+                            "shapes": {k: {"zh": v["zh"], "en": v["en"]} for k, v in SHAPES.items()},
                             "concurrency": CONCURRENCY,
-                            "durations": {k: v["label"] for k, v in DURATIONS.items()},
-                            "scenes": {k: v["label"] for k, v in SCENES.items()}})
+                            "durations": {k: {"zh": v["zh"], "en": v["en"]} for k, v in DURATIONS.items()},
+                            "scenes": {k: {"zh": v["zh"], "en": v["en"]} for k, v in SCENES.items()}})
             else:
                 self._json({"error": "not found"}, 404)
         def do_POST(self):
+            if not authed(self):
+                self._json({"error": "unauthorized"}, 401)
+                return
             ln = int(self.headers.get("Content-Length", 0) or 0)
             try:
                 body = json.loads(self.rfile.read(ln) or b"{}")
@@ -344,7 +394,7 @@ data:
   index.html: |
     <!doctype html><html lang="zh"><head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>Aitra Meter · 演示流量控制台</title>
+    <title>Aitra Meter · Demo Control</title>
     <style>
       :root{--bg:#14181A;--surface:#1C2225;--ink:#E8E6E0;--soft:#9AA4A8;--line:#2E3639;
             --accent:#E8A020;--accent-soft:#3A2F18;--tele:#4FB3B8;--warn:#E0705F;--ok:#5FBF8A}
@@ -352,8 +402,11 @@ data:
       body{margin:0;background:var(--bg);color:var(--ink);
            font:15px/1.7 "PingFang SC","Microsoft YaHei",system-ui,sans-serif;padding:28px 20px 60px}
       main{max-width:780px;margin:0 auto}
+      .top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
       h1{font-size:22px;margin:0 0 4px}
       .sub{color:var(--soft);font-size:13px;margin-bottom:22px}
+      #lang{border:1px solid var(--line);background:transparent;color:var(--soft);
+            border-radius:6px;padding:6px 12px;font-size:13px;cursor:pointer;flex-shrink:0}
       .card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px 20px;margin:12px 0}
       .lbl{font-size:12px;letter-spacing:.1em;color:var(--accent);font-weight:600;margin-bottom:10px}
       .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
@@ -381,53 +434,102 @@ data:
       .stats b{font-size:19px;color:var(--accent)}
       a{color:var(--tele)}
     </style></head><body><main>
-      <h1>⚡ 演示流量控制台</h1>
-      <div class="sub">模型 × 任务形态 × 并发,自由组合(每次 5 分钟);或用预排场景。曲线看
-        <a id="glink" href="#" target="_blank">Grafana Demo 仪表盘</a>。</div>
+      <div class="top"><div>
+        <h1>⚡ <span data-i18n="title"></span></h1>
+        <div class="sub"><span data-i18n="sub"></span>
+          <a id="glink" href="#" target="_blank" data-i18n="grafana"></a>.</div>
+      </div><button id="lang">EN</button></div>
 
-      <div class="card"><div class="lbl">① 模型(可多选——同场景打到多个模型做对比)</div><div class="grid" id="models"></div></div>
-      <div class="card"><div class="lbl">② 任务形态</div><div class="grid" id="shapes"></div></div>
-      <div class="card"><div class="lbl">③ 并发(同时在飞的请求数)</div><div class="grid narrow" id="conc"></div></div>
-      <div class="card"><div class="lbl">④ 时长</div><div class="grid" id="durs"></div></div>
+      <div class="card"><div class="lbl" data-i18n="s1"></div><div class="grid" id="models"></div></div>
+      <div class="card"><div class="lbl" data-i18n="s2"></div><div class="grid" id="shapes"></div></div>
+      <div class="card"><div class="lbl" data-i18n="s3"></div><div class="grid narrow" id="conc"></div></div>
+      <div class="card"><div class="lbl" data-i18n="s4"></div><div class="grid" id="durs"></div></div>
 
       <div class="row">
-        <button id="go">▶ 启动组合</button>
-        <button class="scenebtn" data-scene="sweep">📈 并发扫描 1→32</button>
-        <button class="scenebtn" data-scene="burst">💓 脉冲 ×8</button>
-        <button id="stop">■ 全部停止</button>
+        <button id="go" data-i18n="go"></button>
+        <button class="scenebtn" data-scene="sweep">📈 <span data-i18n="sweep"></span></button>
+        <button class="scenebtn" data-scene="burst">💓 <span data-i18n="burst"></span></button>
+        <button id="stop" data-i18n="stop"></button>
       </div>
       <div id="msg"></div>
 
-      <div class="card"><div class="lbl">空载控制(常驻底噪流量)</div>
+      <div class="card"><div class="lbl" data-i18n="idleTitle"></div>
         <div class="row" style="margin-top:4px">
           <button id="lg">…</button>
-          <span style="font-size:13px;color:var(--soft)">
-            关闭后约 1 分钟:所有模型吞吐归零、进入"占卡静息"状态——演示空载功耗与 serving/idle 对比的入口。</span>
+          <span style="font-size:13px;color:var(--soft)" data-i18n="idleDesc"></span>
         </div>
       </div>
 
-      <div class="card"><div class="lbl">当前状态</div>
+      <div class="card"><div class="lbl" data-i18n="statusTitle"></div>
         <div class="stats" id="stats"></div>
-        <table style="margin-top:12px"><thead><tr><th>任务</th><th>模型</th><th>内容</th><th>状态</th></tr></thead>
-        <tbody id="jobs"><tr><td colspan="4" style="color:var(--soft)">加载中…</td></tr></tbody></table>
+        <table style="margin-top:12px"><thead><tr><th data-i18n="thJob"></th><th data-i18n="thModel"></th><th data-i18n="thDesc"></th><th data-i18n="thState"></th></tr></thead>
+        <tbody id="jobs"><tr><td colspan="4" style="color:var(--soft)">…</td></tr></tbody></table>
       </div>
 
-      <div class="card"><div class="lbl">实时 J/token(30 秒窗口)</div>
-        <table><thead><tr><th>模型</th><th>J/token</th></tr></thead>
+      <div class="card"><div class="lbl" data-i18n="jptTitle"></div>
+        <table><thead><tr><th data-i18n="thModel"></th><th>J/token</th></tr></thead>
         <tbody id="jpt"></tbody></table>
       </div>
     <script>
+      const I18N = {
+        zh: {
+          title:'演示流量控制台', sub:'模型 × 任务形态 × 并发 × 时长,自由组合;或用预排场景。曲线看 ',
+          grafana:'Grafana Demo 仪表盘',
+          s1:'① 模型(可多选——同场景打到多个模型做对比)', s2:'② 任务形态',
+          s3:'③ 并发(同时在飞的请求数)', s4:'④ 时长',
+          go:'▶ 启动组合', sweep:'并发扫描 1→32', burst:'脉冲 ×8', stop:'■ 全部停止',
+          idleTitle:'空载控制(常驻底噪流量)',
+          idleDesc:'关闭后约 1 分钟:所有模型吞吐归零、J/token 归零、功率显示占卡静息值——空载演示入口。',
+          statusTitle:'当前状态', jptTitle:'实时 J/token(30 秒窗口)',
+          thJob:'任务', thModel:'模型', thDesc:'内容', thState:'状态',
+          servingW:'干活功率', idleW:'待机功率', baseline:'底噪流量', on:'开', off:'关',
+          lgOn:'⏻ 关闭底噪(进入空载)', lgOff:'⏻ 打开底噪(恢复常态)',
+          pickModel:'请先选择至少一个模型(可多选)', starting:'启动中…',
+          started:n=>`✓ 已启动 ${n} 个任务`, stopped:n=>`■ 已停止 ${n} 个任务`,
+          noJobs:'当前没有演示任务', lgClosing:'正在关闭底噪…', lgOpening:'正在恢复底噪…',
+          lgClosed:'✓ 底噪已关——约 1 分钟后进入空载形态', lgOpened:'✓ 底噪已恢复',
+          shapeDesc:{balanced:'输入512/输出256', summarize:'输入4096/输出64(重读)',
+                     generate:'输入64/输出1024(重写)', sharegpt:'ShareGPT 真人对话'},
+        },
+        en: {
+          title:'Demo Traffic Console', sub:'Combine model × shape × concurrency × duration, or use a scene. Watch curves on the ',
+          grafana:'Grafana demo dashboards',
+          s1:'① Models (multi-select — same scenario across models for comparison)', s2:'② Task shape',
+          s3:'③ Concurrency (requests in flight)', s4:'④ Duration',
+          go:'▶ Start', sweep:'Sweep 1→32', burst:'Burst ×8', stop:'■ Stop all',
+          idleTitle:'Idle control (baseline traffic)',
+          idleDesc:'Turn off and within ~1 min every model reads zero throughput and zero J/token while power shows the true resting draw — the idle-state demo.',
+          statusTitle:'Current state', jptTitle:'Live J/token (30 s windows)',
+          thJob:'Job', thModel:'Model', thDesc:'What', thState:'State',
+          servingW:'Serving power', idleW:'Idle power', baseline:'Baseline traffic', on:'on', off:'off',
+          lgOn:'⏻ Turn baseline off (go idle)', lgOff:'⏻ Turn baseline on (resume)',
+          pickModel:'Select at least one model first', starting:'Starting…',
+          started:n=>`✓ Started ${n} job(s)`, stopped:n=>`■ Stopped ${n} job(s)`,
+          noJobs:'No demo jobs running', lgClosing:'Turning baseline off…', lgOpening:'Turning baseline on…',
+          lgClosed:'✓ Baseline off — idle state in ~1 min', lgOpened:'✓ Baseline restored',
+          shapeDesc:{balanced:'in 512 / out 256', summarize:'in 4096 / out 64 (read-heavy)',
+                     generate:'in 64 / out 1024 (write-heavy)', sharegpt:'ShareGPT real dialogues'},
+        },
+      };
+      let lang = localStorage.getItem('demo_lang') ||
+                 (navigator.language && navigator.language.startsWith('zh') ? 'zh' : 'en');
+      const T = () => I18N[lang];
+      function applyStatic() {
+        document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = T()[el.dataset.i18n] || ''; });
+        document.getElementById('lang').textContent = lang === 'zh' ? 'EN' : '中文';
+        document.documentElement.lang = lang;
+      }
       const GRAFANA = localStorage.getItem('grafana_url') || 'https://childhood-texture-sunny-tri.trycloudflare.com';
       document.getElementById('glink').href = GRAFANA + '/d/aitra-demo-a';
       let sel = {models: new Set(), shape: 'balanced', concurrency: 8, duration: 'forever'};
-      const SHAPE_DESC = {balanced:'输入512/输出256', summarize:'输入4096/输出64(重读)', generate:'输入64/输出1024(重写)', sharegpt:'ShareGPT 真人对话'};
+      let statusCache = null;
 
       function pill(txt, key, group, desc) {
         const d = document.createElement('div');
         d.className = 'opt'; d.innerHTML = txt + (desc ? `<small>${desc}</small>` : '');
         d.dataset.key = key;
         d.onclick = () => {
-          if (group === 'model') {                 // multi-select
+          if (group === 'model') {
             d.classList.toggle('sel');
             if (sel.models.has(key)) sel.models.delete(key); else sel.models.add(key);
           } else {
@@ -438,47 +540,52 @@ data:
         };
         return d;
       }
-      let built = false;
+      function buildPickers(s) {
+        const mBox = document.getElementById('models'); mBox.innerHTML = '';
+        s.models.forEach(m => {
+          const p = pill(m, m, 'model');
+          if (sel.models.has(m)) p.classList.add('sel');
+          mBox.appendChild(p);
+        });
+        const shBox = document.getElementById('shapes'); shBox.innerHTML = '';
+        Object.entries(s.shapes).forEach(([k, lbls]) => {
+          const p = pill(lbls[lang], k, 'shape', T().shapeDesc[k] || '');
+          if (k === sel.shape) p.classList.add('sel');
+          shBox.appendChild(p);
+        });
+        const cBox = document.getElementById('conc'); cBox.innerHTML = '';
+        s.concurrency.forEach(c => {
+          const p = pill(String(c), String(c), 'concurrency');
+          if (c === sel.concurrency) p.classList.add('sel');
+          cBox.appendChild(p);
+        });
+        const dBox = document.getElementById('durs'); dBox.innerHTML = '';
+        Object.entries(s.durations).forEach(([k, lbls]) => {
+          const p = pill(lbls[lang], k, 'duration');
+          if (k === sel.duration) p.classList.add('sel');
+          dBox.appendChild(p);
+        });
+      }
       async function refresh() {
         try {
-          const r = await fetch('/api/status'); const s = await r.json();
-          if (!built) {
-            built = true;
-            const mBox = document.getElementById('models');
-            s.models.forEach(m => mBox.appendChild(pill(m, m, 'model')));
-            const shBox = document.getElementById('shapes');
-            Object.entries(s.shapes).forEach(([k, lbl]) => {
-              const p = pill(lbl, k, 'shape', SHAPE_DESC[k] || '');
-              if (k === sel.shape) p.classList.add('sel');
-              shBox.appendChild(p);
-            });
-            const cBox = document.getElementById('conc');
-            s.concurrency.forEach(c => {
-              const p = pill(String(c), String(c), 'concurrency');
-              if (c === sel.concurrency) p.classList.add('sel');
-              cBox.appendChild(p);
-            });
-            const dBox = document.getElementById('durs');
-            Object.entries(s.durations).forEach(([k, lbl]) => {
-              const p = pill(lbl, k, 'duration');
-              if (k === sel.duration) p.classList.add('sel');
-              dBox.appendChild(p);
-            });
-          }
+          const r = await fetch('/api/status');
+          if (r.status === 401) { location.reload(); return; }
+          const s = await r.json(); statusCache = s;
+          buildPickers(s);
           const jb = document.getElementById('jobs');
           jb.innerHTML = s.jobs.length ? s.jobs.map(j =>
             `<tr><td>${j.name}</td><td>${j.model}</td><td>${j.desc}</td><td class="st-${j.state}">${j.state}</td></tr>`
-          ).join('') : '<tr><td colspan="4" style="color:var(--soft)">当前没有演示任务</td></tr>';
+          ).join('') : `<tr><td colspan="4" style="color:var(--soft)">${T().noJobs}</td></tr>`;
           const jt = document.getElementById('jpt');
           jt.innerHTML = Object.entries(s.jpt).sort((a,b)=>a[1]-b[1]).map(([m,v]) =>
             `<tr><td>${m}</td><td>${v}</td></tr>`).join('');
           const st = document.getElementById('stats');
           const p = s.power || {};
-          st.innerHTML = `<span>干活功率 <b>${p.serving ?? '—'}</b> W</span>` +
-                         `<span>待机功率 <b>${p.idle ?? '—'}</b> W</span>` +
-                         `<span>底噪流量 <b>${s.loadgen > 0 ? '开' : '关'}</b></span>`;
+          st.innerHTML = `<span>${T().servingW} <b>${p.serving ?? '—'}</b> W</span>` +
+                         `<span>${T().idleW} <b>${p.idle ?? '—'}</b> W</span>` +
+                         `<span>${T().baseline} <b>${s.loadgen > 0 ? T().on : T().off}</b></span>`;
           const lg = document.getElementById('lg');
-          lg.textContent = s.loadgen > 0 ? '⏻ 关闭底噪(进入空载)' : '⏻ 打开底噪(恢复常态)';
+          lg.textContent = s.loadgen > 0 ? T().lgOn : T().lgOff;
           lg.className = s.loadgen > 0 ? '' : 'off';
           lg.dataset.on = s.loadgen > 0 ? '1' : '0';
         } catch (e) { /* keep last view */ }
@@ -492,36 +599,43 @@ data:
       }
       function report(d) {
         const ok = (d.started || []).length;
-        let t = ok ? `✓ 已启动 ${ok} 个任务` : '';
-        if (d.errors && d.errors.length) t += (t ? ';' : '✗ ') + d.errors.join(';');
-        say(t || '✗ 启动失败', d.errors && !ok ? 'err' : 'ok');
+        let t = ok ? T().started(ok) : '';
+        if (d.errors && d.errors.length) t += (t ? ' · ' : '✗ ') + d.errors.join(' · ');
+        say(t || '✗', d.errors && !ok ? 'err' : 'ok');
       }
       document.getElementById('go').onclick = async () => {
-        if (!sel.models.size) { say('请先选择至少一个模型(可多选)', 'err'); return; }
-        say('启动中…');
+        if (!sel.models.size) { say(T().pickModel, 'err'); return; }
+        say(T().starting);
         const d = await post('/api/start',
           {models: [...sel.models], shape: sel.shape, concurrency: sel.concurrency, duration: sel.duration});
         report(d); refresh();
       };
       document.querySelectorAll('.scenebtn').forEach(b => b.onclick = async () => {
-        if (!sel.models.size) { say('请先选择至少一个模型(可多选)', 'err'); return; }
-        say('启动中…');
+        if (!sel.models.size) { say(T().pickModel, 'err'); return; }
+        say(T().starting);
         const d = await post('/api/start',
           {models: [...sel.models], shape: sel.shape, scene: b.dataset.scene});
         report(d); refresh();
       });
       document.getElementById('stop').onclick = async () => {
         const d = await post('/api/stop');
-        say('■ 已停止 ' + d.stopped + ' 个任务', 'ok'); refresh();
+        say(T().stopped(d.stopped || 0), 'ok'); refresh();
       };
       document.getElementById('lg').onclick = async (e) => {
         const on = e.target.dataset.on === '1';
-        say(on ? '正在关闭底噪流量…' : '正在恢复底噪流量…');
+        say(on ? T().lgClosing : T().lgOpening);
         const d = await post('/api/loadgen', {on: !on});
-        say(d.error ? ('✗ ' + d.error) : (on ? '✓ 底噪已关——约 1 分钟后看板进入空载形态' : '✓ 底噪已恢复'), d.error ? 'err' : 'ok');
+        say(d.error ? ('✗ ' + d.error) : (on ? T().lgClosed : T().lgOpened), d.error ? 'err' : 'ok');
         refresh();
       };
-      refresh(); setInterval(refresh, 5000);
+      document.getElementById('lang').onclick = () => {
+        lang = lang === 'zh' ? 'en' : 'zh';
+        localStorage.setItem('demo_lang', lang);
+        applyStatic();
+        if (statusCache) buildPickers(statusCache);
+        refresh();
+      };
+      applyStatic(); refresh(); setInterval(refresh, 5000);
     </script></main></body></html>
 ---
 apiVersion: apps/v1
@@ -552,6 +666,12 @@ spec:
           env:
             - name: PROM_URL
               value: "http://aitra-meter-prometheus:9090"
+            - name: ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: demo-control-key
+                  key: key
+                  optional: true   # absent Secret = open LAN mode
           ports:
             - containerPort: 8080
           volumeMounts:
