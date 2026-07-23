@@ -63,6 +63,14 @@ measurementAgent:
   #   type: dcgm
   #   config:
   #     endpoint: "http://localhost:9400/metrics"
+  # kepler example (for clusters where Kepler is already deployed — reads
+  # kepler_container_joules_total via the Prometheus federate API; see
+  # docs/guides/kepler-integration.md):
+  # energyProvider:
+  #   type: kepler
+  #   config:
+  #     endpoint: "http://prometheus-operated.monitoring.svc.cluster.local:9090"
+  #     container_label: "container"
   inferenceProvider:
     type: vllm
     config:
