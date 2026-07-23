@@ -157,6 +157,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for full guidance.
 - [Operations](docs/guides/operations.md) — upgrading, scaling, air-gapped install
 - [KEDA integration](docs/guides/keda-integration.md)
 - [OpenCost integration](docs/guides/opencost-integration.md)
+- [llm-d integration](docs/guides/llm-d-integration.md) — per-phase prefill/decode J/token for disaggregated serving
 - [Troubleshooting](docs/guides/troubleshooting.md)
 
 ### Concepts

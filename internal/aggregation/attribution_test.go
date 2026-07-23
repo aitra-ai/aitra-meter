@@ -45,6 +45,41 @@ func TestResolverDirect(t *testing.T) {
 	}
 }
 
+func TestResolverRolePassthrough(t *testing.T) {
+	// The llm-d.ai/role label ("prefill" | "decode") resolved by the pod
+	// lookup must pass through Resolve unchanged (issue #49).
+	tests := []struct {
+		name string
+		role string
+	}{
+		{name: "prefill", role: "prefill"},
+		{name: "decode", role: "decode"},
+		{name: "no role for conventional serving", role: ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			lookup := &stubLookup{pods: map[string]PodMeta{
+				"node-1/qwen": {Namespace: "inference-prod", Role: tc.role},
+			}}
+			r := NewResolver(lookup, PolicyConfig{DefaultMethod: AttributionDirect})
+			a := r.Resolve(context.Background(), "node-1", "qwen")
+			if a.Role != tc.role {
+				t.Errorf("Role = %q, want %q", a.Role, tc.role)
+			}
+		})
+	}
+}
+
+func TestResolverRoleEmptyOnLookupError(t *testing.T) {
+	// The best-effort fallback attribution must not invent a role.
+	lookup := &stubLookup{err: errors.New("k8s unavailable")}
+	r := NewResolver(lookup, PolicyConfig{})
+	a := r.Resolve(context.Background(), "node-1", "qwen")
+	if a.Role != "" {
+		t.Errorf("Role = %q on lookup error, want empty", a.Role)
+	}
+}
+
 func TestResolverNamespaceOverride(t *testing.T) {
 	lookup := &stubLookup{pods: map[string]PodMeta{
 		"node-1/llama": {Namespace: "inference-shared"},
