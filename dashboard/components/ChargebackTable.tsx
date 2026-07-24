@@ -41,7 +41,8 @@ function TierBadge({ tier }: { tier: string }) {
 }
 
 async function fetchChargeback(days: number): Promise<ChargebackRow[]> {
-  const res = await fetch(`/api/chargeback?days=${days}`, { cache: "no-store" });
+  const base = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+  const res = await fetch(`${base}/api/chargeback?days=${days}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const json = await res.json();
   if (json.error) throw new Error(json.error);
