@@ -1,0 +1,115 @@
+# Minimal vLLM to generate real inference traffic on ONE A100, so the dashboard's
+# J/token, cost, carbon and chargeback views light up with measured data.
+# Reuses the vllm/vllm-openai:v0.10.2 image already cached on xspark (Never).
+#
+# The pod network can't reliably reach HF from inside transformers (it crashes on
+# the first transient failure), but plain curl to hf-mirror works. So an
+# initContainer curl-downloads the small model (with retries) into a host-path
+# dir, and vLLM loads it OFFLINE from disk. aitra-system only.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-demo
+  namespace: aitra-system
+  labels:
+    app: vllm-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-demo
+  template:
+    metadata:
+      labels:
+        app: vllm-demo
+        # Lets the aggregation service pin windows for this model to this pod
+        # (namespace attribution) on nodes running several models at once.
+        aitra-ai.github.io/model-name: qwen2.5-0.5b
+    spec:
+      initContainers:
+        - name: fetch-model
+          image: curlimages/curl:8.11.1
+          securityContext:
+            runAsUser: 0   # write to the root-owned host-path model dir
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              D=/models/qwen
+              mkdir -p "$D"
+              BASE=https://hf-mirror.com/Qwen/Qwen2.5-0.5B-Instruct/resolve/main
+              for f in config.json generation_config.json merges.txt tokenizer.json tokenizer_config.json vocab.json model.safetensors; do
+                if [ -s "$D/$f" ]; then echo "have $f"; continue; fi
+                echo "downloading $f ..."
+                n=0
+                until curl -fSL --max-time 600 -o "$D/$f.part" "$BASE/$f"; do
+                  n=$((n+1)); [ "$n" -ge 15 ] && echo "FAILED $f after 15 tries" && exit 1
+                  echo "retry $f ($n)"; sleep 3
+                done
+                mv "$D/$f.part" "$D/$f"
+              done
+              echo "model ready:"; ls -la "$D"
+          volumeMounts:
+            - name: model
+              mountPath: /models
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.10.2
+          imagePullPolicy: Never
+          args:
+            - --model
+            - /models/qwen
+            - --served-model-name
+            - qwen2.5-0.5b
+            - --gpu-memory-utilization
+            - "0.20"
+            - --max-model-len
+            - "4096"
+          env:
+            - name: HF_HUB_OFFLINE
+              value: "1"
+            - name: TRANSFORMERS_OFFLINE
+              value: "1"
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 60
+          volumeMounts:
+            - name: shm
+              mountPath: /dev/shm
+            - name: model
+              mountPath: /models
+      volumes:
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 2Gi
+        - name: model
+          # Persistent on the GPU node so the model survives pod restarts.
+          hostPath:
+            path: /root/aitra-qwen-model
+            type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-demo
+  namespace: aitra-system
+  labels:
+    app: vllm-demo
+spec:
+  selector:
+    app: vllm-demo
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000

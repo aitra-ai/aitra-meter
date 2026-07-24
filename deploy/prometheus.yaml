@@ -1,0 +1,77 @@
+# Minimal Prometheus that scrapes the aggregation service. The cluster's
+# kubesphere Prometheus is not exposed as a queryable Service, so the dashboard
+# points here instead.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aitra-meter-prometheus-config
+  namespace: aitra-system
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 2s
+      evaluation_interval: 2s
+    scrape_configs:
+      - job_name: aitra-meter-aggregation
+        static_configs:
+          - targets: ['aitra-meter-aggregation.aitra-system:8080']
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aitra-meter-prometheus
+  namespace: aitra-system
+  labels:
+    app: aitra-meter-prometheus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aitra-meter-prometheus
+  template:
+    metadata:
+      labels:
+        app: aitra-meter-prometheus
+    spec:
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v2.54.1
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.path=/prometheus
+            - --storage.tsdb.retention.time=2d
+          ports:
+            - containerPort: 9090
+          volumeMounts:
+            - name: config
+              mountPath: /etc/prometheus
+            - name: data
+              mountPath: /prometheus
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: config
+          configMap:
+            name: aitra-meter-prometheus-config
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aitra-meter-prometheus
+  namespace: aitra-system
+  labels:
+    app: aitra-meter-prometheus
+spec:
+  selector:
+    app: aitra-meter-prometheus
+  ports:
+    - name: http
+      port: 9090
+      targetPort: 9090

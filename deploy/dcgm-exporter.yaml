@@ -1,0 +1,55 @@
+# dcgm-exporter DaemonSet — exposes per-GPU energy/power on :9400. The aitra-meter
+# DCGM EnergyProvider (issue #35) scrapes this. Runs only on schedulable nodes
+# (xspark here; control-plane is cordoned). Read-only GPU telemetry.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: dcgm-exporter
+  namespace: aitra-system
+  labels: { app: dcgm-exporter }
+spec:
+  selector:
+    matchLabels: { app: dcgm-exporter }
+  template:
+    metadata:
+      labels: { app: dcgm-exporter }
+    spec:
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: dcgm-exporter
+          image: nvcr.io/nvidia/k8s/dcgm-exporter:3.3.9-3.6.1-ubuntu22.04
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            privileged: true
+          # -k maps each GPU metric to the pod using it (via the kubelet
+          # pod-resources socket) → exported_pod / exported_namespace labels.
+          # This lets aitra-meter attribute energy per model pod, since each
+          # csghub-deployed model owns whole GPUs (nvidia.com/gpu: N).
+          args: ["-k", "-c", "2500"]   # collect every 2.5s (default 30s would alias 5s windows)
+          ports:
+            - { name: metrics, containerPort: 9400 }
+          env:
+            - { name: DCGM_EXPORTER_LISTEN, value: ":9400" }
+          volumeMounts:
+            - { name: pod-resources, mountPath: /var/lib/kubelet/pod-resources, readOnly: true }
+      volumes:
+        - name: pod-resources
+          hostPath: { path: /var/lib/kubelet/pod-resources }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dcgm-exporter
+  namespace: aitra-system
+  labels: { app: dcgm-exporter }
+spec:
+  type: ClusterIP
+  # Node-local routing: the agent scrapes the exporter on its OWN node. Without
+  # this, kube-proxy round-robins to every endpoint including the control-plane
+  # pod (no usable GPUs → /metrics hangs >10s), so ~half the agent scrapes time
+  # out. Local routing keeps each agent on its fast node-local exporter.
+  internalTrafficPolicy: Local
+  selector: { app: dcgm-exporter }
+  ports:
+    - { name: metrics, port: 9400, targetPort: metrics }

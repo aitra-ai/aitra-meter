@@ -1,0 +1,80 @@
+# Minimal, isolated deploy of the aitra-meter aggregation-service into its own
+# namespace. Non-privileged, no GPU — does not touch the `spaces` workloads.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aitra-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: aitra-meter
+  namespace: aitra-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: aitra-meter-readonly
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "nodes"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: aitra-meter-readonly
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: aitra-meter-readonly
+subjects:
+  - kind: ServiceAccount
+    name: aitra-meter
+    namespace: aitra-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aitra-meter-aggregation
+  namespace: aitra-system
+  labels: { app: aitra-meter, component: aggregation-service }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: aitra-meter, component: aggregation-service }
+  template:
+    metadata:
+      labels: { app: aitra-meter, component: aggregation-service }
+    spec:
+      serviceAccountName: aitra-meter
+      containers:
+        - name: aggregation-service
+          image: aitra-meter/aggregation-service:dev
+          imagePullPolicy: Never
+          args: ["--cluster=dev", "--metrics-addr=:8080", "--grpc-addr=:9091"]
+          env:
+            - { name: CLUSTER_NAME, value: "dev" }
+            - { name: STORAGE_BACKEND, value: "sqlite" }
+            - { name: SQLITE_PATH, value: "/data/aitra.db" }
+          ports:
+            - { name: metrics, containerPort: 8080 }
+            - { name: grpc, containerPort: 9091 }
+          volumeMounts:
+            - { name: data, mountPath: /data }
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aitra-meter-aggregation
+  namespace: aitra-system
+  labels: { app: aitra-meter, component: aggregation-service }
+spec:
+  type: ClusterIP
+  selector: { app: aitra-meter, component: aggregation-service }
+  ports:
+    - { name: metrics, port: 8080, targetPort: metrics }
+    - { name: grpc, port: 9091, targetPort: grpc }

@@ -1,0 +1,114 @@
+# Demo B — tensor-parallel scaling curve (J/token vs TP degree).
+#
+# ONE 27B-class dense model (Qwen3.6-27B) at TP = 1 / 2 / 4 / 8, run sequentially. The per-model
+# measurement agent attributes exactly the pod's GPUs, so at every TP degree
+# J/token uses only participating-GPU energy; the remaining GPUs show up in
+# the residual (_idle) series — that separation IS the demo.
+#
+# Before applying: scale the Demo A fleet away so the GPUs are free —
+#   kubectl -n aitra-system scale deploy -l tier=vllm-fleet --replicas=0
+#
+# To step the curve, edit BOTH values below (marked TP-DEGREE), re-apply, and
+# wait for readiness between steps:
+#   --tensor-parallel-size   and   nvidia.com/gpu
+# Reuses the model dir downloaded by the fleet (vllm-72b) — no re-download.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-tp
+  namespace: aitra-system
+  labels:
+    app: vllm-tp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-tp
+  template:
+    metadata:
+      labels:
+        app: vllm-tp
+        aitra-ai.github.io/model-name: qwen3.6-27b-tp
+    spec:
+      initContainers:
+        - name: fetch-model
+          image: curlimages/curl:8.11.1
+          securityContext:
+            runAsUser: 0
+          command: ["/bin/sh", "/opt/fetch/fetch.sh"]
+          env:
+            - name: MODEL_REPO
+              value: "Qwen/Qwen3.6-27B"
+            - name: MODEL_DIR
+              value: "q36-27b"   # shared with the fleet's vllm-q36-27b
+          volumeMounts:
+            - name: model
+              mountPath: /models
+            - name: fetch-script
+              mountPath: /opt/fetch
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.19.0
+          imagePullPolicy: Never
+          args:
+            - --model
+            - /models/q36-27b
+            - --served-model-name
+            - qwen3.6-27b-tp
+            - --tensor-parallel-size
+            - "2"                  # TP-DEGREE: 1 | 2 | 4 | 8
+            - --gpu-memory-utilization
+            - "0.92"
+            - --max-model-len
+            - "8192"
+          env:
+            - name: HF_HUB_OFFLINE
+              value: "1"
+            - name: TRANSFORMERS_OFFLINE
+              value: "1"
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            limits:
+              nvidia.com/gpu: 2    # TP-DEGREE: must equal --tensor-parallel-size
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 120
+          volumeMounts:
+            - name: shm
+              mountPath: /dev/shm
+            - name: model
+              mountPath: /models
+      volumes:
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Gi        # NCCL shared buffers for TP
+        - name: model
+          hostPath:
+            path: /root/aitra-models
+            type: DirectoryOrCreate
+        - name: fetch-script
+          configMap:
+            name: vllm-fetch-script
+            defaultMode: 0555
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-tp
+  namespace: aitra-system
+  labels:
+    app: vllm-tp
+spec:
+  selector:
+    app: vllm-tp
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000

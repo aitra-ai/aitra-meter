@@ -151,3 +151,11 @@ var (
 		Help: "Fraction of elapsed time the node was serving inference requests (0.0-1.0).",
 	}, []string{"node"})
 )
+
+// ResetNodeGPUPower drops every aitra_gpu_power_watts series for a node.
+// Per-model agents split node power across per-model series; when the node
+// returns to fully idle this clears the stale per-model series so they don't
+// linger (and inflate per-node sums) after model pods scale to zero.
+func ResetNodeGPUPower(node string) {
+	GPUPowerWatts.DeletePartialMatch(prometheus.Labels{"node": node})
+}

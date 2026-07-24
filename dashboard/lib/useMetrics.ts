@@ -6,8 +6,9 @@ import type { PrometheusResult } from "./prometheus";
 const REFRESH_INTERVAL_MS = 15_000; // match Prometheus scrape interval
 
 async function fetchMetrics(query: string): Promise<PrometheusResult[]> {
+  const base = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
   const res = await fetch(
-    `/api/metrics?query=${encodeURIComponent(query)}`,
+    `${base}/api/metrics?query=${encodeURIComponent(query)}`,
     { cache: "no-store" },
   );
   if (!res.ok) throw new Error(`HTTP ${res.status}`);

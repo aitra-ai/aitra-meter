@@ -1,0 +1,45 @@
+# Steady trickle of completion requests so tokens flow every measurement window
+# (30s), keeping the agent in "serving" state and populating J/token.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-loadgen
+  namespace: aitra-system
+  labels:
+    app: vllm-loadgen
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-loadgen
+  template:
+    metadata:
+      labels:
+        app: vllm-loadgen
+    spec:
+      containers:
+        - name: loadgen
+          image: curlimages/curl:8.11.1
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              BASE=http://vllm-demo.aitra-system:8000
+              echo "waiting for vLLM /health ..."
+              until curl -sf "$BASE/health" >/dev/null 2>&1; do sleep 5; done
+              echo "vLLM ready — generating load"
+              PROMPTS='What is GPU energy efficiency?|Explain joules per token.|Summarize datacenter power usage.|Why measure inference energy?|Describe idle GPU power.'
+              while true; do
+                P=$(echo "$PROMPTS" | tr '|' '\n' | sed -n "$(( (RANDOM % 5) + 1 ))p")
+                curl -s -o /dev/null -X POST "$BASE/v1/completions" \
+                  -H 'Content-Type: application/json' \
+                  -d "{\"model\":\"qwen2.5-0.5b\",\"prompt\":\"$P\",\"max_tokens\":128,\"temperature\":0.7}"
+                sleep 2
+              done
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi

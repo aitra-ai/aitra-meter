@@ -1,0 +1,324 @@
+# Demo C Panel 1 — workload-shape contrast.
+#
+# ONE model (Qwen3.5-9B) deployed three times on three GPUs with three served
+# names. Same weights, same hardware — the only difference is the traffic
+# shape driven at each endpoint (see the demo runbook):
+#   qwen3.5-9b-summarize : long-context prompt, short completion (prefill-heavy)
+#   qwen3.5-9b-generate  : short prompt, long completion (decode-heavy)
+#   qwen3.5-9b-chat      : balanced chat
+# Three distinct J/token series with identical model + hardware shows workload
+# shape drives energy, not just model size.
+#
+# Needs 3 free GPUs (scale down part of the fleet first if the node is full).
+# Reuses the fleet's downloaded vllm-7b model dir and fetch-script ConfigMap
+# (apply vllm-fleet.yaml first — it owns the ConfigMap).
+#
+# Labeling note: these panels show aggregate J/token differing BECAUSE the
+# prefill/decode ratio differs. We do not measure per-phase energy — never
+# present it as such.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-shape-summarize
+  namespace: aitra-system
+  labels:
+    app: vllm-shape-summarize
+    tier: vllm-shape
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-shape-summarize
+  template:
+    metadata:
+      labels:
+        app: vllm-shape-summarize
+        tier: vllm-shape
+        aitra-ai.github.io/model-name: qwen3.5-9b-summarize
+    spec:
+      initContainers:
+        - name: fetch-model
+          image: curlimages/curl:8.11.1
+          securityContext:
+            runAsUser: 0
+          command: ["/bin/sh", "/opt/fetch/fetch.sh"]
+          env:
+            - name: MODEL_REPO
+              value: "Qwen/Qwen3.5-9B"
+            - name: MODEL_DIR
+              value: "q35-9b"   # shared with the fleet's vllm-q35-9b
+          volumeMounts:
+            - name: model
+              mountPath: /models
+            - name: fetch-script
+              mountPath: /opt/fetch
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.19.0
+          imagePullPolicy: Never
+          args:
+            - --model
+            - /models/q35-9b
+            - --served-model-name
+            - qwen3.5-9b-summarize
+            - --gpu-memory-utilization
+            - "0.90"
+            - --max-model-len
+            - "16384"   # room for the long-context summarize shape
+          env:
+            - name: HF_HUB_OFFLINE
+              value: "1"
+            - name: TRANSFORMERS_OFFLINE
+              value: "1"
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 120
+          volumeMounts:
+            - name: shm
+              mountPath: /dev/shm
+            - name: model
+              mountPath: /models
+      volumes:
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi
+        - name: model
+          hostPath:
+            path: /root/aitra-models
+            type: DirectoryOrCreate
+        - name: fetch-script
+          configMap:
+            name: vllm-fetch-script
+            defaultMode: 0555
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-shape-summarize
+  namespace: aitra-system
+  labels:
+    app: vllm-shape-summarize
+    tier: vllm-shape
+spec:
+  selector:
+    app: vllm-shape-summarize
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-shape-generate
+  namespace: aitra-system
+  labels:
+    app: vllm-shape-generate
+    tier: vllm-shape
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-shape-generate
+  template:
+    metadata:
+      labels:
+        app: vllm-shape-generate
+        tier: vllm-shape
+        aitra-ai.github.io/model-name: qwen3.5-9b-generate
+    spec:
+      initContainers:
+        - name: fetch-model
+          image: curlimages/curl:8.11.1
+          securityContext:
+            runAsUser: 0
+          command: ["/bin/sh", "/opt/fetch/fetch.sh"]
+          env:
+            - name: MODEL_REPO
+              value: "Qwen/Qwen3.5-9B"
+            - name: MODEL_DIR
+              value: "q35-9b"   # shared with the fleet's vllm-q35-9b
+          volumeMounts:
+            - name: model
+              mountPath: /models
+            - name: fetch-script
+              mountPath: /opt/fetch
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.19.0
+          imagePullPolicy: Never
+          args:
+            - --model
+            - /models/q35-9b
+            - --served-model-name
+            - qwen3.5-9b-generate
+            - --gpu-memory-utilization
+            - "0.90"
+            - --max-model-len
+            - "16384"   # room for the long-context summarize shape
+          env:
+            - name: HF_HUB_OFFLINE
+              value: "1"
+            - name: TRANSFORMERS_OFFLINE
+              value: "1"
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 120
+          volumeMounts:
+            - name: shm
+              mountPath: /dev/shm
+            - name: model
+              mountPath: /models
+      volumes:
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi
+        - name: model
+          hostPath:
+            path: /root/aitra-models
+            type: DirectoryOrCreate
+        - name: fetch-script
+          configMap:
+            name: vllm-fetch-script
+            defaultMode: 0555
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-shape-generate
+  namespace: aitra-system
+  labels:
+    app: vllm-shape-generate
+    tier: vllm-shape
+spec:
+  selector:
+    app: vllm-shape-generate
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-shape-chat
+  namespace: aitra-system
+  labels:
+    app: vllm-shape-chat
+    tier: vllm-shape
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-shape-chat
+  template:
+    metadata:
+      labels:
+        app: vllm-shape-chat
+        tier: vllm-shape
+        aitra-ai.github.io/model-name: qwen3.5-9b-chat
+    spec:
+      initContainers:
+        - name: fetch-model
+          image: curlimages/curl:8.11.1
+          securityContext:
+            runAsUser: 0
+          command: ["/bin/sh", "/opt/fetch/fetch.sh"]
+          env:
+            - name: MODEL_REPO
+              value: "Qwen/Qwen3.5-9B"
+            - name: MODEL_DIR
+              value: "q35-9b"   # shared with the fleet's vllm-q35-9b
+          volumeMounts:
+            - name: model
+              mountPath: /models
+            - name: fetch-script
+              mountPath: /opt/fetch
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.19.0
+          imagePullPolicy: Never
+          args:
+            - --model
+            - /models/q35-9b
+            - --served-model-name
+            - qwen3.5-9b-chat
+            - --gpu-memory-utilization
+            - "0.90"
+            - --max-model-len
+            - "16384"   # room for the long-context summarize shape
+          env:
+            - name: HF_HUB_OFFLINE
+              value: "1"
+            - name: TRANSFORMERS_OFFLINE
+              value: "1"
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 120
+          volumeMounts:
+            - name: shm
+              mountPath: /dev/shm
+            - name: model
+              mountPath: /models
+      volumes:
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi
+        - name: model
+          hostPath:
+            path: /root/aitra-models
+            type: DirectoryOrCreate
+        - name: fetch-script
+          configMap:
+            name: vllm-fetch-script
+            defaultMode: 0555
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-shape-chat
+  namespace: aitra-system
+  labels:
+    app: vllm-shape-chat
+    tier: vllm-shape
+spec:
+  selector:
+    app: vllm-shape-chat
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
