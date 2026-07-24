@@ -26,7 +26,7 @@ spec:
           # pod-resources socket) → exported_pod / exported_namespace labels.
           # This lets aitra-meter attribute energy per model pod, since each
           # csghub-deployed model owns whole GPUs (nvidia.com/gpu: N).
-          args: ["-k"]
+          args: ["-k", "-c", "2500"]   # collect every 2.5s (default 30s would alias 5s windows)
           ports:
             - { name: metrics, containerPort: 9400 }
           env:

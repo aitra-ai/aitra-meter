@@ -496,7 +496,7 @@
       ]
     }
   ],
-  "refresh": "5s",
+  "refresh": "2s",
   "schemaVersion": 39,
   "tags": [
     "aitra",

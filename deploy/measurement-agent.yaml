@@ -36,7 +36,7 @@ spec:
             - --energy-provider=dcgm
             - --energy-endpoint=http://dcgm-exporter.aitra-system:9400/metrics
             - --aggregator=aitra-meter-aggregation:9091
-            - --window-seconds=15
+            - --window-seconds=5
             - --log-level=info
           env:
             - name: NODE_NAME
