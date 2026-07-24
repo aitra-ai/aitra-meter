@@ -323,7 +323,7 @@ data:
             self.wfile.write(body)
         def do_GET(self):
             parsed = urllib.parse.urlparse(self.path)
-            if parsed.path == "/" or parsed.path.startswith("/index"):
+            if parsed.path in ("", "/") or parsed.path.startswith("/index"):
                 qs = urllib.parse.parse_qs(parsed.query)
                 key = (qs.get("k") or [""])[0]
                 if ACCESS_KEY and key == ACCESS_KEY:
