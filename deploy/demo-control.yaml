@@ -522,7 +522,7 @@ data:
         document.getElementById('lang').textContent = lang === 'zh' ? 'EN' : '中文';
         document.documentElement.lang = lang;
       }
-      const GRAFANA = localStorage.getItem('grafana_url') || 'https://childhood-texture-sunny-tri.trycloudflare.com';
+      const GRAFANA = localStorage.getItem('grafana_url') || 'https://meter.aitra.ai';
       document.getElementById('glink').href = GRAFANA + '/d/aitra-demo-a';
       let sel = {models: new Set(), shape: 'balanced', concurrency: 8, duration: 'forever'};
       let statusCache = null;
