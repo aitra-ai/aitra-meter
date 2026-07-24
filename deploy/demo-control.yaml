@@ -106,9 +106,12 @@ data:
         "30m":     {"zh": "30 分钟", "en": "30 min", "secs": 1800},
         "forever": {"zh": "持续(手动停止,上限 4 小时)", "en": "Continuous (stop manually, 4 h cap)", "secs": 14400},
     }
+    # Sweep prompt volume scales with output length so every shape finishes
+    # inside the deadline (generate emits 4x the tokens of balanced).
+    SWEEP_FACTOR = {"balanced": 30, "summarize": 40, "generate": 8, "sharegpt": 30}
     SCENES = {
-        "sweep": {"zh": "并发扫描 1→32(约 12 分钟)", "en": "Concurrency sweep 1→32 (~12 min)", "deadline": 1800,
-                  "script": "for C in 1 2 4 8 16 32; do %(bench)s--max-concurrency $C --num-prompts $((C*30)); sleep 60; done"},
+        "sweep": {"zh": "并发扫描 1→32(约 12 分钟)", "en": "Concurrency sweep 1→32 (~12 min)", "deadline": 2400,
+                  "script": "for C in 1 2 4 8 16 32; do %(bench)s--max-concurrency $C --num-prompts $((C*%(factor)s)); sleep 45; done"},
         "burst": {"zh": "脉冲流量 ×8(满载 30s/静默 60s)", "en": "Burst ×8 (30 s load / 60 s quiet)", "deadline": 1400,
                   "script": "for i in 1 2 3 4 5 6 7 8; do %(bench)s--max-concurrency 32 --num-prompts 120; sleep 60; done"},
     }
@@ -220,7 +223,7 @@ data:
         svc, mdir = MODELS[model]
         bench = (BASE + SHAPES[shape]["args"]) % {"svc": svc, "model": model, "dir": mdir}
         sc = SCENES[scene]
-        script = sc["script"] % {"bench": bench}
+        script = sc["script"] % {"bench": bench, "factor": SWEEP_FACTOR.get(shape, 30)}
         desc = f"{scene} · {shape}"
         name = f"demo-{scene}-{mdir}-{int(time.time())%100000}".lower().replace(".", "-")
         make_job(name, model, desc, script, sc["deadline"])
