@@ -28,7 +28,7 @@ const ALLOWED_KEYWORDS = new Set([
 
 /** Label names that may appear in matchers and grouping clauses. */
 const ALLOWED_LABELS = new Set([
-  "node", "model_name", "namespace", "workload", "model", "hardware",
+  "node", "model_name", "namespace", "workload", "model", "hardware", "gpu_id",
   "precision", "cluster", "instance", "job", "calibration_tier",
   "attribution_method", "carbon_source", "cost_source", "source", "le",
 ]);
