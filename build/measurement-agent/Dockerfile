@@ -1,15 +1,29 @@
-# Multi-stage build for the measurement-agent. In DCGM mode the agent only
-# scrapes a dcgm-exporter HTTP endpoint, so it needs no GPU driver libs and runs
-# unprivileged. Pure-Go build (CGO disabled): nvml/amd providers are compiled in
-# but use dlopen at runtime only when selected.
-FROM golang:1.25 AS build
+# Measurement agent — runs as a DaemonSet on GPU nodes.
+#
+# Built CGO_ENABLED=0. The default NVML provider is pure Go (go-nvml dlopens
+# libnvidia-ml.so.1 at runtime from the node's driver installation), so no cgo
+# toolchain is needed here. The AMD provider is gated behind the `amd` build
+# tag and compiles to a stub in this image; ROCm nodes need an image built
+# with `--build-arg BUILD_TAGS=amd` and CGO_ENABLED=1 against the AMD SMI
+# headers.
+FROM golang:1.26-bookworm AS builder
 WORKDIR /src
-ENV GOFLAGS=-mod=mod
+
 COPY go.mod go.sum ./
-RUN go mod download || true
+RUN go mod download
+
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /out/measurement-agent ./cmd/measurement-agent
+
+ARG VERSION=dev
+ARG BUILD_TAGS=""
+RUN CGO_ENABLED=0 GOOS=linux go build \
+      -tags "${BUILD_TAGS}" \
+      -trimpath \
+      -ldflags "-s -w -X main.version=${VERSION}" \
+      -o /out/measurement-agent \
+      ./cmd/measurement-agent
 
 FROM gcr.io/distroless/static-debian12:nonroot
-COPY --from=build /out/measurement-agent /measurement-agent
-ENTRYPOINT ["/measurement-agent"]
+COPY --from=builder /out/measurement-agent /usr/local/bin/measurement-agent
+USER nonroot:nonroot
+ENTRYPOINT ["/usr/local/bin/measurement-agent"]

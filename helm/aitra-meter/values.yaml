@@ -8,11 +8,30 @@ cluster:
 measurementAgent:
   image:
     repository: ghcr.io/aitra-ai/aitra-meter/measurement-agent
-    tag: "0.1.0"
+    # Defaults to the chart appVersion. Override only to pin a specific image.
+    tag: ""
     pullPolicy: IfNotPresent
-  # Node selector — DaemonSet only schedules to nodes with this label
+  # Node selector — DaemonSet only schedules to nodes with this label.
+  # This is a presence flag: it decides WHERE the agent runs. It does not
+  # identify the GPU. If you already run the NVIDIA GPU Operator you can use its
+  # label instead: {nvidia.com/gpu.present: "true"}.
   nodeSelector:
     aitra-ai.github.io/gpu: "true"
+
+  # GPU tier — WHICH GPU this is, used to label every measurement.
+  #
+  # Resolved automatically from nvidia.com/gpu.product, which Node Feature
+  # Discovery publishes on every GPU node (the NVIDIA GPU Operator runs NFD), so
+  # on most clusters nothing needs to be set here:
+  #
+  #     nvidia.com/gpu.product=NVIDIA-H100-PCIe-80GB  ->  hardware="h100"
+  #
+  # To override — no NFD, or you want your own tier names — label the node:
+  #
+  #     kubectl label node <node> aitra-ai.github.io/gpu-tier=h100
+  #
+  # Do NOT put a tier value on the nodeSelector key above. Scheduling and
+  # identification are separate questions and one label cannot answer both.
   resources:
     requests:
       cpu: 100m
@@ -48,7 +67,8 @@ measurementAgent:
     type: vllm
     config:
       endpoint: "http://localhost:8000/metrics"
-  # generic-prometheus example (works with TGI, SGLang, Ollama, Triton, any custom server):
+  # generic-prometheus example (works with TGI, SGLang, Ollama, Triton, any custom server).
+  # TGI:
   # inferenceProvider:
   #   type: generic-prometheus
   #   config:
@@ -56,6 +76,15 @@ measurementAgent:
   #     output_tokens_metric: "tgi_request_generated_tokens_total"
   #     requests_running_metric: "tgi_queue_size"
   #     model_name_label: "model_id"
+  # SGLang (metric names carry a "sglang:" prefix; tensor-parallel deployments
+  # expose one series per rank and the provider sums across them):
+  # inferenceProvider:
+  #   type: generic-prometheus
+  #   config:
+  #     endpoint: "http://localhost:30000/metrics"
+  #     output_tokens_metric: "sglang:generation_tokens_total"
+  #     requests_running_metric: "sglang:num_running_reqs"
+  #     model_name_label: "model_name"
   # CV gate: flag measurements with rolling CV above this threshold
   cvThreshold: 0.03
   cvWindowSize: 100
@@ -63,7 +92,8 @@ measurementAgent:
 aggregationService:
   image:
     repository: ghcr.io/aitra-ai/aitra-meter/aggregation-service
-    tag: "0.1.0"
+    # Defaults to the chart appVersion. Override only to pin a specific image.
+    tag: ""
     pullPolicy: IfNotPresent
   replicas: 1
   resources:
@@ -75,11 +105,18 @@ aggregationService:
       memory: 512Mi
   port: 8080
 
+# Standalone dashboard — a self-contained Next.js UI served from its own image.
+#
+# Off by default. Aitra Meter writes plain Prometheus metrics, and most clusters
+# already run Grafana; the provisioned Grafana dashboards below are the primary
+# surface and require no extra image, no extra Deployment, and no second place to
+# look. Enable this only if you want a standalone view independent of Grafana.
 dashboard:
-  enabled: true
+  enabled: false
   image:
     repository: ghcr.io/aitra-ai/aitra-meter/dashboard
-    tag: "0.1.0"
+    # Defaults to the chart appVersion. Override only to pin a specific image.
+    tag: ""
     pullPolicy: IfNotPresent
   replicas: 1
   port: 3000
@@ -94,6 +131,26 @@ prometheus:
     namespace: monitoring
     interval: 15s
     scrapeTimeout: 10s
+
+# Grafana dashboard provisioning — the default surface for Aitra Meter's metrics.
+#
+# All dashboard JSON files in files/ (overview, cost attribution, AI efficiency,
+# hardware efficiency) are rendered into a ConfigMap labelled for the Grafana
+# dashboard sidecar (kube-prometheus-stack ships it by default), so the
+# dashboards appear in Grafana without a manual import step.
+#
+# This requires a Grafana with the dashboard sidecar running in the cluster. If
+# you do not run Grafana, set this to false and enable the standalone dashboard
+# above instead.
+grafana:
+  enabled: true
+  # Label key/value the Grafana sidecar watches for on dashboard ConfigMaps.
+  # kube-prometheus-stack default: grafana_dashboard=1.
+  sidecarLabel: grafana_dashboard
+  sidecarLabelValue: "1"
+  # Optional Grafana folder for the provisioned dashboards (grafana_folder
+  # annotation, honoured by the sidecar). Empty = Grafana default folder.
+  folder: ""
 
 # Storage backend — SQLite by default (embedded, no infrastructure required).
 storage:
@@ -119,6 +176,16 @@ siteConfig:
   pue: 1.35
   carbonIntensityFallback: 400
   carbonSource: electricitymaps
+
+# Per-namespace 24h inference-energy cost budgets (USD), keyed by namespace name.
+# Each entry renders an aitra_tenant_cost_budget_usd_24h recording rule (see
+# templates/prometheusrule.yaml) that the TenantCostBudgetExceeded alert compares
+# against. Empty = no budget rules rendered. See docs/guides/cost-budgets.md.
+# Example:
+#   costBudgets:
+#     inference-prod: 500
+#     inference-fin: 250
+costBudgets: {}
 
 # External API credentials
 externalApis:

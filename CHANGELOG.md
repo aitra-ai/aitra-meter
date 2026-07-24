@@ -11,6 +11,19 @@ Pre-release tags: `-alpha` tags are internal milestones. `-beta` tags are public
 
 ## [Unreleased]
 
+### Added
+- **DCGM energy provider** — pure-Go `EnergyProvider` that scrapes a node-local dcgm-exporter Prometheus endpoint; selectable via `-energy-provider dcgm` / `energyProvider.type: dcgm`. (#59)
+- **Model-level AI efficiency metric family** — `aitra_model_tokens_total` and `aitra_model_energy_per_1m_tokens`, plus SiteConfig-driven cost/carbon derivation (`aitra_cost_per_million_tokens_usd`, `aitra_co2_per_token_grams`, `aitra_tenant_cost_usd_total`) and per-node serving/idle ratios (`aitra_gpu_serving_utilization_ratio`, `aitra_idle_time_ratio`). (#60)
+- **Cost-budget and TTFT alerts** — `TenantCostBudgetExceeded` and `TTFTRegression` reference alerts, a runbook per alert, and a Helm-driven per-namespace budget mechanism (`costBudgets`). (#61)
+
+### Fixed
+- Repository builds again under `-mod=readonly` (CI default): completed `go.sum` and pruned an unused `testcontainers-go`/Docker dependency tree via `go mod tidy`.
+- `generic-prometheus` provider test referenced an invalid method on `*struct{}` and did not compile — replaced with a normal test helper.
+- Lint job restored: migrated `.golangci.yml` to the golangci-lint v2 schema (`version: "2"`) and fixed the issues it surfaced (gosec G112 `ReadHeaderTimeout` on the metrics server, govet copylocks in a test, staticcheck empty branch, gofmt/goimports formatting).
+
+### Changed
+- AMD SMI energy provider is now gated behind the `amd` build tag (`go build -tags amd`) with a no-cgo stub for default builds, so `go build ./...` and `go test ./...` no longer require ROCm/AMD SMI headers in CI.
+
 ---
 
 ## [0.1.0-alpha] — 2026-06-09

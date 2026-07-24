@@ -169,7 +169,7 @@ func TestAnnotOrFallback(t *testing.T) {
 
 func TestNodeHardwareLookupHit(t *testing.T) {
 	client := fake.NewSimpleClientset(
-		makeNode("node-1", map[string]string{labelGPUTier: "h100"}),
+		makeNode("node-1", map[string]string{labelHardwareOverride: "h100"}),
 	)
 	hw := NewNodeHardwareLookup(client)
 	if got := hw.Hardware(context.Background(), "node-1"); got != "h100" {
@@ -195,9 +195,9 @@ func TestNodeHardwareLookupUnknownNode(t *testing.T) {
 
 func TestNodesByHardware(t *testing.T) {
 	client := fake.NewSimpleClientset(
-		makeNode("node-1", map[string]string{labelGPUTier: "h100"}),
-		makeNode("node-2", map[string]string{labelGPUTier: "h100"}),
-		makeNode("node-3", map[string]string{labelGPUTier: "l40s"}),
+		makeNode("node-1", map[string]string{labelHardwareOverride: "h100"}),
+		makeNode("node-2", map[string]string{labelHardwareOverride: "h100"}),
+		makeNode("node-3", map[string]string{labelHardwareOverride: "l40s"}),
 	)
 	hw := NewNodeHardwareLookup(client)
 	nodes, err := hw.NodesByHardware(context.Background(), "h100")

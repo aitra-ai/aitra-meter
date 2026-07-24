@@ -19,6 +19,17 @@
   "version": 1,
   "refresh": "30s",
   "tags": ["aitra", "ai", "inference", "energy"],
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROMETHEUS",
+        "label": "Prometheus",
+        "type": "datasource",
+        "query": "prometheus",
+        "hide": 0
+      }
+    ]
+  },
   "panels": [
     {
       "id": 1,

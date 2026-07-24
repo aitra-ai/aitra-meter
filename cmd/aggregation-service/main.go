@@ -158,7 +158,7 @@ func main() {
 		_ = json.NewEncoder(w).Encode(map[string]any{"namespaces": charges})
 	})
 
-	httpSrv := &http.Server{Addr: *metricsAddr, Handler: mux}
+	httpSrv := &http.Server{Addr: *metricsAddr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		log.Info("metrics server listening", zap.String("addr", *metricsAddr))
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
