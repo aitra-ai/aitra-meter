@@ -312,7 +312,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "ops",
+          "unit": "suffix:token/s",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 2,
@@ -353,7 +353,7 @@
       ]
     }
   ],
-  "refresh": "10s",
+  "refresh": "5s",
   "schemaVersion": 39,
   "tags": [
     "aitra",

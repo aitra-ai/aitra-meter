@@ -219,7 +219,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "none",
+          "unit": "suffix:token/s",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 2,
@@ -231,7 +231,20 @@
             }
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "GPU watts"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "watt"
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -269,7 +282,7 @@
       ]
     }
   ],
-  "refresh": "10s",
+  "refresh": "5s",
   "schemaVersion": 39,
   "tags": [
     "aitra",

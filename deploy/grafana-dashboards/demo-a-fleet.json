@@ -165,7 +165,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "ops",
+          "unit": "suffix:token/s",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 2,
@@ -216,7 +216,7 @@
       },
       "gridPos": {
         "h": 9,
-        "w": 12,
+        "w": 24,
         "x": 0,
         "y": 21
       },
@@ -258,63 +258,6 @@
           },
           "expr": "aitra_gpu_power_watts",
           "legendFormat": "{{gpu_id}}",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 7,
-      "type": "timeseries",
-      "title": "Measurement CV by model (stability gate < 3%)",
-      "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 12,
-        "x": 12,
-        "y": 21
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 2,
-            "fillOpacity": 12,
-            "showPoints": "never",
-            "spanNulls": true,
-            "stacking": {
-              "mode": "none"
-            }
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "calcs": [
-            "lastNotNull",
-            "mean"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "aitra_measurement_cv{model_name=~\"$model\"}",
-          "legendFormat": "{{model_name}}",
           "refId": "A"
         }
       ]
@@ -553,7 +496,7 @@
       ]
     }
   ],
-  "refresh": "10s",
+  "refresh": "5s",
   "schemaVersion": 39,
   "tags": [
     "aitra",
