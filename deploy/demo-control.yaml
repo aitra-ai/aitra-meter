@@ -522,6 +522,8 @@ data:
         document.getElementById('lang').textContent = lang === 'zh' ? 'EN' : '中文';
         document.documentElement.lang = lang;
       }
+      // Mount-point-agnostic API base: works at / (LAN), /console and /console/.
+      const BASE = location.pathname.endsWith('/') ? location.pathname : location.pathname + '/';
       const GRAFANA = localStorage.getItem('grafana_url') || 'https://meter.aitra.ai';
       document.getElementById('glink').href = GRAFANA + '/d/aitra-demo-a';
       let sel = {models: new Set(), shape: 'balanced', concurrency: 8, duration: 'forever'};
@@ -571,7 +573,7 @@ data:
       }
       async function refresh() {
         try {
-          const r = await fetch('api/status');
+          const r = await fetch(BASE + 'api/status');
           if (r.status === 401) { location.reload(); return; }
           const s = await r.json(); statusCache = s;
           buildPickers(s);
@@ -609,25 +611,25 @@ data:
       document.getElementById('go').onclick = async () => {
         if (!sel.models.size) { say(T().pickModel, 'err'); return; }
         say(T().starting);
-        const d = await post('api/start',
+        const d = await post(BASE + 'api/start',
           {models: [...sel.models], shape: sel.shape, concurrency: sel.concurrency, duration: sel.duration});
         report(d); refresh();
       };
       document.querySelectorAll('.scenebtn').forEach(b => b.onclick = async () => {
         if (!sel.models.size) { say(T().pickModel, 'err'); return; }
         say(T().starting);
-        const d = await post('api/start',
+        const d = await post(BASE + 'api/start',
           {models: [...sel.models], shape: sel.shape, scene: b.dataset.scene});
         report(d); refresh();
       });
       document.getElementById('stop').onclick = async () => {
-        const d = await post('api/stop');
+        const d = await post(BASE + 'api/stop');
         say(T().stopped(d.stopped || 0), 'ok'); refresh();
       };
       document.getElementById('lg').onclick = async (e) => {
         const on = e.target.dataset.on === '1';
         say(on ? T().lgClosing : T().lgOpening);
-        const d = await post('api/loadgen', {on: !on});
+        const d = await post(BASE + 'api/loadgen', {on: !on});
         say(d.error ? ('✗ ' + d.error) : (on ? T().lgClosed : T().lgOpened), d.error ? 'err' : 'ok');
         refresh();
       };
