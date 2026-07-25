@@ -45,6 +45,19 @@ message WindowReport {
 
   // Unix timestamp in milliseconds at the end of the window.
   int64 timestamp_unix_ms = 11;
+
+  // Host energy consumed during this window in joules — everything on the node
+  // that is not the accelerator (CPU package, DRAM, and depending on the
+  // provider the wider board). Unset when the node exposes no host telemetry; an
+  // unset field means "not measured", which is deliberately not the same as zero.
+  optional double host_energy_joules = 12;
+
+  // Host power draw snapshot at window end, in watts. Unset when unavailable.
+  optional double host_power_watts = 13;
+
+  // Host energy provider identifier (e.g. "rapl", "grace-hwmon"). Empty when host
+  // energy is unavailable. Used for the provider / host_provider metric labels.
+  string host_provider = 14;
 }
 
 // WindowAck is returned by the aggregation service after processing a report.

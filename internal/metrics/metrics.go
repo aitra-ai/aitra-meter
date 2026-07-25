@@ -150,4 +150,43 @@ var (
 		Name: "aitra_gpu_serving_utilization_ratio",
 		Help: "Fraction of elapsed time the node was serving inference requests (0.0-1.0).",
 	}, []string{"node"})
+
+	// --- Host energy (issue #82) --------------------------------------------
+	// Everything on the node that is not the accelerator: CPU package, DRAM, and
+	// depending on the provider the wider board. ALL of these metrics are ABSENT
+	// on nodes without host telemetry — never emitted as zero. A zero would
+	// understate aitra_system_j_per_token and make an unmeasured node look more
+	// efficient than a measured one. See internal/aggregation/loop.go, where every
+	// write below is guarded on host-energy presence.
+
+	// HostEnergyJoulesTotal is cumulative host (non-accelerator) energy in joules.
+	// Absent on nodes without host telemetry.
+	HostEnergyJoulesTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "aitra_host_energy_joules_total",
+		Help: "Cumulative host (non-accelerator) energy consumed in joules. Absent on nodes without host telemetry — never zero.",
+	}, []string{"node", "provider", "domain"})
+
+	// HostPowerWatts is current host (non-accelerator) power draw.
+	// Absent on nodes without host telemetry.
+	HostPowerWatts = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "aitra_host_power_watts",
+		Help: "Current host (non-accelerator) power draw in watts. Absent on nodes without host telemetry — never zero.",
+	}, []string{"node", "provider"})
+
+	// SystemJPerToken is (gpu_energy + host_energy) / output_tokens — the whole-node
+	// energy cost of a token. Absent on nodes without host telemetry, so that a node
+	// missing host measurement is incomparable rather than falsely flattering.
+	SystemJPerToken = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "aitra_system_j_per_token",
+		Help: "Total system (accelerator + host) joules per output token. Absent on nodes without host telemetry — never GPU-only.",
+	}, []string{"namespace", "workload", "model", "hardware", "precision", "calibration_tier", "attribution_method", "host_provider"})
+
+	// HostEnergyFraction is host_energy / (gpu_energy + host_energy): how much of a
+	// workload's energy is not going into the accelerator. A serving deployment
+	// burning a large fraction outside the GPU is misconfigured, and today that is
+	// invisible. Absent on nodes without host telemetry.
+	HostEnergyFraction = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "aitra_host_energy_fraction",
+		Help: "Fraction of total energy consumed outside the accelerator (host / (gpu+host)). Absent on nodes without host telemetry.",
+	}, []string{"node", "model", "namespace"})
 )

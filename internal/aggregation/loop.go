@@ -174,6 +174,33 @@ func (l *Loop) ReportWindow(
 
 	metrics.GPUPowerWatts.WithLabelValues(w.Node, "all").Set(w.PowerWatts)
 
+	// --- host energy (issue #82) -------------------------------------------
+	// Present only when the agent actually measured it. Absence is emitted as
+	// absence: no host metric is written, and aitra_system_j_per_token /
+	// aitra_host_energy_fraction simply do not exist for this node. Never zero —
+	// a zero would make an unmeasured node look more efficient than a measured
+	// one. The GPU path above is entirely unaffected by host presence.
+	var hostRec *float64
+	if w.HostEnergyJoules != nil {
+		hostJ := *w.HostEnergyJoules
+		hp := w.HostProvider
+		metrics.HostEnergyJoulesTotal.WithLabelValues(w.Node, hp, "all").Add(hostJ)
+		if w.HostPowerWatts != nil {
+			metrics.HostPowerWatts.WithLabelValues(w.Node, hp).Set(*w.HostPowerWatts)
+		}
+		systemJ := w.EnergyJoules + hostJ
+		metrics.SystemJPerToken.WithLabelValues(
+			attr.Namespace, attr.Workload, w.ModelName, hw,
+			attr.Precision, tier, method, hp,
+		).Set(systemJ / float64(w.OutputTokens))
+		if systemJ > 0 {
+			metrics.HostEnergyFraction.WithLabelValues(w.Node, w.ModelName, attr.Namespace).
+				Set(hostJ / systemJ)
+		}
+		v := hostJ // copy: do not alias the proto message's pointer into storage
+		hostRec = &v
+	}
+
 	// --- storage record -------------------------------------------------
 	ts := w.TimestampUnixMs
 	if ts == 0 {
@@ -200,6 +227,7 @@ func (l *Loop) ReportWindow(
 		Stable:            stable,
 		EnergyProvider:    w.EnergyProvider,
 		InferenceProvider: w.InferenceProvider,
+		HostEnergyJoules:  hostRec,
 	}
 	_ = l.writer.Write(ctx, rec) // async writers never block; errors are logged by the writer
 

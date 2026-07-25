@@ -83,7 +83,7 @@ Metrics are exposed at:
 
 **Type:** Gauge  
 **Source:** Aggregation service  
-**Description:** Joules per output token for the current measurement window. The primary Aitra Meter metric.
+**Description:** Joules per output token for the current measurement window. The primary Aitra Meter metric. **This is accelerator (GPU) energy only** — it does not include host energy (CPU package, DRAM, board). For whole-node energy per token, see [`aitra_system_j_per_token`](#aitra_system_j_per_token), which is emitted when a host-energy provider is configured. The definition of this metric is unchanged: anyone with a baseline keeps it.
 
 | Label | Description |
 |---|---|
@@ -300,6 +300,84 @@ Metrics are exposed at:
 | Label | Description |
 |---|---|
 | `node` | Kubernetes node name |
+
+---
+
+## Host energy metrics (#82)
+
+Host energy is everything on the node that is **not** the accelerator: CPU
+package, DRAM, and — depending on the provider — the wider board (NICs, storage,
+fans, PSU losses). It is measured per node by a host-energy provider (`rapl` on
+x86, `grace-hwmon` on the Grace Superchip, and the experimental opt-in
+`grace-spark-hwmon` on GB10 / DGX Spark via a community driver); see the
+[host energy guide](../guides/host-energy.md). The `provider` label distinguishes
+these paths so experimental-path data is segregable in Prometheus.
+
+> **Absent is not zero.** Every metric in this section is **omitted entirely** on
+> nodes without host telemetry — it is never emitted as `0`. A zero would
+> understate whole-node efficiency and make an *unmeasured* node look **more
+> efficient** than a measured one, so the two would be incomparable and the more
+> honest node would look worse. On a stock GB10 / DGX Spark, which exposes no host
+> power telemetry, these metrics do not exist — unless the operator has opted into
+> the experimental `grace-spark-hwmon` community-driver path.
+
+### `aitra_host_energy_joules_total`
+
+**Type:** Counter  
+**Source:** Aggregation service  
+**Description:** Cumulative host (non-accelerator) energy consumed, in joules. **Absent** on nodes without host telemetry.
+
+| Label | Description |
+|---|---|
+| `node` | Kubernetes node name |
+| `provider` | Host energy provider: `rapl`, `grace-hwmon`, `grace-spark-hwmon` (experimental) |
+| `domain` | Energy domain (`all` for the summed node total) |
+
+---
+
+### `aitra_host_power_watts`
+
+**Type:** Gauge  
+**Source:** Aggregation service  
+**Description:** Current host (non-accelerator) power draw in watts. **Absent** on nodes without host telemetry.
+
+| Label | Description |
+|---|---|
+| `node` | Kubernetes node name |
+| `provider` | Host energy provider: `rapl`, `grace-hwmon`, `grace-spark-hwmon` (experimental) |
+
+---
+
+### `aitra_system_j_per_token`
+
+**Type:** Gauge  
+**Source:** Aggregation service  
+**Description:** Total system energy per output token: `(gpu_energy + host_energy) / output_tokens`. The whole-node counterpart to [`aitra_j_per_token`](#aitra_j_per_token). **Absent** on nodes without host telemetry — never falls back to the GPU-only figure.
+
+| Label | Description |
+|---|---|
+| `namespace` | Kubernetes namespace |
+| `workload` | Workload type: `chat`, `code`, `reasoning`, `batch`, `unknown` |
+| `model` | Model name |
+| `hardware` | GPU tier from node label |
+| `precision` | Precision from pod annotation |
+| `calibration_tier` | `aitra_benchmark`, `reference`, `self_calibrated`, `uncalibrated` |
+| `attribution_method` | `direct` or `proportional` |
+| `host_provider` | Host energy provider that supplied the host term |
+
+---
+
+### `aitra_host_energy_fraction`
+
+**Type:** Gauge  
+**Source:** Aggregation service  
+**Description:** Fraction of a workload's energy consumed **outside** the accelerator: `host_energy / (gpu_energy + host_energy)`. A serving deployment burning a large fraction outside the GPU is likely misconfigured — a signal that is otherwise invisible. **Absent** on nodes without host telemetry.
+
+| Label | Description |
+|---|---|
+| `node` | Kubernetes node name |
+| `model` | Model name |
+| `namespace` | Kubernetes namespace |
 
 ---
 

@@ -41,7 +41,13 @@ spec:
           imagePullPolicy: {{ .Values.measurementAgent.image.pullPolicy }}
           args:
             - --energy-provider={{ .Values.measurementAgent.energyProvider.type }}
+            {{- with .Values.measurementAgent.hostEnergyProvider }}
+            - --host-energy-provider={{ .type }}
+            {{- end }}
             - --inference-provider={{ .Values.measurementAgent.inferenceProvider.type }}
+            {{- if .Values.measurementAgent.inferenceProvider.config.endpoint }}
+            - --inference-endpoint={{ .Values.measurementAgent.inferenceProvider.config.endpoint }}
+            {{- end }}
             - --aggregator={{ include "aitra-meter.fullname" . }}-aggregation-service:9091
             - --log-level=info
           env:
@@ -53,6 +59,16 @@ spec:
             - name: INFERENCE_ENDPOINT
               value: {{ .Values.measurementAgent.inferenceProvider.config.endpoint | quote }}
             {{- end }}
+            {{- if .Values.measurementAgent.nvml.hostLibraryPath }}
+            # Driver-matched NVML library injected via hostPath (kind/bare-metal
+            # nodes where the container runtime does not auto-mount driver libs).
+            # LD_PRELOAD loads it at process start so go-nvml's cgo symbols bind
+            # correctly (a plain dlopen after startup leaves the GOT slot at 0).
+            - name: LD_PRELOAD
+              value: /opt/nvml/libnvidia-ml.so.1
+            - name: LD_LIBRARY_PATH
+              value: /opt/nvml
+            {{- end }}
           ports:
             - name: metrics
               containerPort: 9090
@@ -61,6 +77,9 @@ spec:
             privileged: true
           resources:
             {{- toYaml .Values.measurementAgent.resources | nindent 12 }}
+          {{- if .Values.measurementAgent.httpProbes }}
+          # The agent is a gRPC-push loop with no HTTP server in this build; probes
+          # are opt-in and only valid once an HTTP metrics/health server is wired in.
           livenessProbe:
             httpGet:
               path: /healthz
@@ -73,6 +92,53 @@ spec:
               port: 9090
             initialDelaySeconds: 5
             periodSeconds: 10
+          {{- end }}
+          {{- $rapl := eq .Values.measurementAgent.hostEnergyProvider.type "rapl" }}
+          {{- $hwmon := or (eq .Values.measurementAgent.hostEnergyProvider.type "grace-hwmon") (eq .Values.measurementAgent.hostEnergyProvider.type "grace-spark-hwmon") }}
+          {{- if or .Values.measurementAgent.nvml.hostLibraryPath $rapl $hwmon }}
+          volumeMounts:
+            {{- if .Values.measurementAgent.nvml.hostLibraryPath }}
+            - name: nvml-lib
+              mountPath: /opt/nvml/libnvidia-ml.so.1
+              readOnly: true
+            {{- end }}
+            {{- if $rapl }}
+            # RAPL reads /sys/class/powercap. Mounted explicitly so the counters
+            # are visible in the pod rather than relying on the default /sys mount.
+            - name: powercap
+              mountPath: /sys/class/powercap
+              readOnly: true
+            {{- end }}
+            {{- if $hwmon }}
+            # grace-hwmon / grace-spark-hwmon read /sys/class/hwmon. Mounted
+            # explicitly so the power rails / energy accumulators are visible in the
+            # pod rather than relying on the default /sys mount.
+            - name: hwmon
+              mountPath: /sys/class/hwmon
+              readOnly: true
+            {{- end }}
+          {{- end }}
+      {{- if or .Values.measurementAgent.nvml.hostLibraryPath $rapl $hwmon }}
+      volumes:
+        {{- if .Values.measurementAgent.nvml.hostLibraryPath }}
+        - name: nvml-lib
+          hostPath:
+            path: {{ .Values.measurementAgent.nvml.hostLibraryPath }}
+            type: File
+        {{- end }}
+        {{- if $rapl }}
+        - name: powercap
+          hostPath:
+            path: /sys/class/powercap
+            type: Directory
+        {{- end }}
+        {{- if $hwmon }}
+        - name: hwmon
+          hostPath:
+            path: /sys/class/hwmon
+            type: Directory
+        {{- end }}
+      {{- end }}
 ---
 apiVersion: v1
 kind: Service
