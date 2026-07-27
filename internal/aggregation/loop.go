@@ -42,8 +42,9 @@ type Loop struct {
 	site SiteParams
 
 	mu            sync.Mutex
-	cvByKey       map[string]*CVTracker      // key: node+"\x00"+modelName
-	servingByNode map[string]*servingTracker // key: node
+	cvByKey       map[string]*CVTracker         // key: node+"\x00"+modelName
+	servingByNode map[string]*servingTracker    // key: node
+	clusterByTier map[string]*clusterJPTTracker // key: calibration tier
 
 	// OTLPExporter is optional. When non-nil, each window is also emitted
 	// via OTLP to an OpenTelemetry Collector.
@@ -68,6 +69,7 @@ func NewLoop(
 		site:          site,
 		cvByKey:       make(map[string]*CVTracker),
 		servingByNode: make(map[string]*servingTracker),
+		clusterByTier: make(map[string]*clusterJPTTracker),
 	}
 }
 
@@ -174,7 +176,20 @@ func (l *Loop) ReportWindow(
 	cv.Add(jpt)
 	cvVal := cv.CV()
 	stable := cv.Stable()
+
+	// Cluster-wide J/token: Σenergy ÷ Σtokens over the recent span, per
+	// calibration tier (the gauge's label). Summing before dividing weights
+	// each window by its token count.
+	tierKey := string(cal.Tier)
+	ct, ok := l.clusterByTier[tierKey]
+	if !ok {
+		ct = newClusterJPTTracker(DefaultClusterWindow)
+		l.clusterByTier[tierKey] = ct
+	}
+	clusterJPT := ct.add(time.Now(), w.EnergyJoules, float64(w.OutputTokens))
 	l.mu.Unlock()
+
+	metrics.ClusterJPerToken.WithLabelValues(l.cluster, tierKey).Set(clusterJPT)
 
 	// --- Prometheus metrics ------------------------------------------------
 	method := string(attr.Method)
