@@ -69,7 +69,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "aitra_j_per_token{model=~\"$model\"}",
+          "expr": "aitra_j_per_token{model=~\"$model\",hardware!=\"unknown\"}",
           "legendFormat": "{{model}}",
           "refId": "A"
         }
@@ -142,7 +142,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "aitra_j_per_token{model=~\"$model\"}",
+          "expr": "aitra_j_per_token{model=~\"$model\",hardware!=\"unknown\"}",
           "legendFormat": "{{model}}",
           "refId": "A"
         }
