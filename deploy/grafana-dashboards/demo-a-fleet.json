@@ -10,7 +10,7 @@
     {
       "id": 1,
       "type": "row",
-      "title": "Per-model tiles — one GPU each, attributed live",
+      "title": "Per-model tiles \u2014 one GPU each, attributed live",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -23,7 +23,7 @@
     {
       "id": 2,
       "type": "stat",
-      "title": "J/token — $model",
+      "title": "J/token \u2014 $model",
       "description": "Per-window joules per output token for this model (its own GPUs only).",
       "datasource": {
         "type": "prometheus",
@@ -279,7 +279,7 @@
       "id": 9,
       "type": "stat",
       "title": "Cluster J/token",
-      "description": "sum(energy)/sum(tokens) across the fleet — reconciles with the per-model tiles.",
+      "description": "sum(energy)/sum(tokens) across the fleet \u2014 reconciles with the per-model tiles.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -528,7 +528,8 @@
           ]
         },
         "sort": 1,
-        "label": "Model"
+        "label": "Model",
+        "regex": "/^qwen/"
       }
     ]
   },
@@ -537,7 +538,7 @@
     "to": "now"
   },
   "timezone": "browser",
-  "title": "Aitra Meter — Demo A: Heterogeneous Fleet",
+  "title": "Aitra Meter \u2014 Demo A: Heterogeneous Fleet",
   "uid": "aitra-demo-a",
   "version": 1
 }
