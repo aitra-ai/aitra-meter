@@ -22,6 +22,8 @@ import (
 
 	measurementv1 "github.com/aitra-ai/aitra-meter/api/proto/measurement/v1"
 	"github.com/aitra-ai/aitra-meter/internal/model"
+
+	"github.com/aitra-ai/aitra-meter/internal/provider"
 )
 
 // realistically shaped kubelet checkpoint: one NUMA-map GPU entry, one
@@ -289,4 +291,168 @@ func TestMultiLoopEndToEnd(t *testing.T) {
 	assertReport("model-a", 100, 100)
 	assertReport("model-b", 100, 200)
 	assertReport(model.ResidualModelName, 50, 0)
+}
+
+// fakeHostEnergy scripts successive host window readings.
+type fakeHostEnergy struct {
+	avail  bool
+	joules []float64 // successive EndWindow returns
+	begun  int
+}
+
+func (f *fakeHostEnergy) BeginWindow(context.Context, string) error { f.begun++; return nil }
+func (f *fakeHostEnergy) EndWindow(context.Context, string) (float64, error) {
+	if len(f.joules) == 0 {
+		return 0, fmt.Errorf("no host reading scripted")
+	}
+	j := f.joules[0]
+	if len(f.joules) > 1 {
+		f.joules = f.joules[1:]
+	}
+	return j, nil
+}
+func (f *fakeHostEnergy) IdlePower(context.Context) (float64, error) { return 0, nil }
+func (f *fakeHostEnergy) Domains(context.Context) ([]provider.Device, error) {
+	return []provider.Device{{ID: "package-0", Type: "cpu"}}, nil
+}
+func (f *fakeHostEnergy) Available(context.Context) bool { return f.avail }
+func (f *fakeHostEnergy) Name() string                   { return "fake-host" }
+
+// TestMultiLoopHostEnergyAttribution verifies the issue #82 per-model host
+// split: host joules divide across model pods proportionally to their GPU
+// energy share, whole-node host power rides on every model report, and the
+// residual report never carries host fields.
+func TestMultiLoopHostEnergyAttribution(t *testing.T) {
+	var tokensA, tokensB atomic.Uint64
+	_, portA := fakeVLLM(t, "model-a", &tokensA)
+	_, portB := fakeVLLM(t, "model-b", &tokensB)
+
+	cpPath := filepath.Join(t.TempDir(), "kubelet_internal_checkpoint")
+	cp := `{"Data":{"PodDeviceEntries":[
+		{"PodUID":"pod-a","ContainerName":"vllm","ResourceName":"nvidia.com/gpu","DeviceIDs":{"0":["GPU-aaa","GPU-bbb"]}},
+		{"PodUID":"pod-b","ContainerName":"vllm","ResourceName":"nvidia.com/gpu","DeviceIDs":["GPU-ccc"]}
+	]}}`
+	if err := os.WriteFile(cpPath, []byte(cp), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	perDevice := &fakePerDevice{snaps: []map[string]float64{
+		{"GPU-aaa": 1000, "GPU-bbb": 2000, "GPU-ccc": 3000, "GPU-ddd": 4000},
+		{"GPU-aaa": 1400, "GPU-bbb": 2250, "GPU-ccc": 3150, "GPU-ddd": 4600},
+	}}
+
+	k8s := k8sfake.NewSimpleClientset(
+		runningGPUPod("pod-a", "vllm-model-a", portA),
+		runningGPUPod("pod-b", "vllm-model-b", portB),
+	)
+
+	addr, svc, stop := startFakeAggSvc(t)
+	defer stop()
+
+	host := &fakeHostEnergy{avail: true, joules: []float64{200}}
+	loop, err := NewMultiLoop(MultiConfig{
+		Node:           "test-node",
+		AggregatorAddr: addr,
+		WindowDuration: time.Hour,
+		Energy:         &fakeEnergy{},
+		PerDevice:      perDevice,
+		K8s:            k8s,
+		CheckpointPath: cpPath,
+		HostEnergy:     host,
+	}, zap.NewNop())
+	if err != nil {
+		t.Fatalf("NewMultiLoop: %v", err)
+	}
+	defer loop.Close() //nolint:errcheck
+
+	ctx := context.Background()
+	loop.tick(ctx) // baseline: opens the first host window, no reports
+	loop.tick(ctx) // first window: GPU deltas a=650, b=150; host=200
+
+	byModel := map[string]*measurementv1.WindowReport{}
+	for _, r := range svc.all() {
+		byModel[r.ModelName] = r
+	}
+
+	// pod-a: 200 × 650/800 = 162.5; pod-b: 200 × 150/800 = 37.5.
+	a, b := byModel["model-a"], byModel["model-b"]
+	if a == nil || b == nil {
+		t.Fatalf("missing model reports; got %v", byModel)
+	}
+	if a.HostEnergyJoules == nil || *a.HostEnergyJoules != 162.5 {
+		t.Errorf("model-a host joules = %v, want 162.5", a.HostEnergyJoules)
+	}
+	if b.HostEnergyJoules == nil || *b.HostEnergyJoules != 37.5 {
+		t.Errorf("model-b host joules = %v, want 37.5", b.HostEnergyJoules)
+	}
+	// Shares must sum back to the node total (aggregation Add()s them).
+	if got := *a.HostEnergyJoules + *b.HostEnergyJoules; got != 200 {
+		t.Errorf("host shares sum = %v, want 200", got)
+	}
+	// Whole-node host power is identical on every model report.
+	if a.HostPowerWatts == nil || b.HostPowerWatts == nil || *a.HostPowerWatts != *b.HostPowerWatts {
+		t.Errorf("host power differs across model reports: %v vs %v", a.HostPowerWatts, b.HostPowerWatts)
+	}
+	if a.HostProvider != "fake-host" {
+		t.Errorf("host provider = %q, want fake-host", a.HostProvider)
+	}
+	// Residual: no host fields, ever.
+	res := byModel[model.ResidualModelName]
+	if res == nil {
+		t.Fatal("missing residual report")
+	}
+	if res.HostEnergyJoules != nil || res.HostPowerWatts != nil {
+		t.Errorf("residual carries host fields: %v / %v", res.HostEnergyJoules, res.HostPowerWatts)
+	}
+}
+
+// TestMultiLoopHostEnergyUnavailable: an unavailable provider must omit host
+// fields entirely (absent is not zero) and never be called for windows.
+func TestMultiLoopHostEnergyUnavailable(t *testing.T) {
+	var tokens atomic.Uint64
+	_, port := fakeVLLM(t, "model-a", &tokens)
+
+	cpPath := filepath.Join(t.TempDir(), "kubelet_internal_checkpoint")
+	cp := `{"Data":{"PodDeviceEntries":[
+		{"PodUID":"pod-a","ContainerName":"vllm","ResourceName":"nvidia.com/gpu","DeviceIDs":["GPU-aaa"]}
+	]}}`
+	if err := os.WriteFile(cpPath, []byte(cp), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	perDevice := &fakePerDevice{snaps: []map[string]float64{
+		{"GPU-aaa": 1000},
+		{"GPU-aaa": 1500},
+	}}
+	k8s := k8sfake.NewSimpleClientset(runningGPUPod("pod-a", "vllm-model-a", port))
+	addr, svc, stop := startFakeAggSvc(t)
+	defer stop()
+
+	host := &fakeHostEnergy{avail: false}
+	loop, err := NewMultiLoop(MultiConfig{
+		Node:           "test-node",
+		AggregatorAddr: addr,
+		WindowDuration: time.Hour,
+		Energy:         &fakeEnergy{},
+		PerDevice:      perDevice,
+		K8s:            k8s,
+		CheckpointPath: cpPath,
+		HostEnergy:     host,
+	}, zap.NewNop())
+	if err != nil {
+		t.Fatalf("NewMultiLoop: %v", err)
+	}
+	defer loop.Close() //nolint:errcheck
+
+	ctx := context.Background()
+	loop.tick(ctx)
+	loop.tick(ctx)
+
+	if host.begun != 0 {
+		t.Errorf("unavailable provider had %d windows opened, want 0", host.begun)
+	}
+	for _, r := range svc.all() {
+		if r.HostEnergyJoules != nil || r.HostPowerWatts != nil || r.HostProvider != "" {
+			t.Errorf("report %q carries host fields despite unavailable provider", r.ModelName)
+		}
+	}
 }

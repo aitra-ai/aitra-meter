@@ -75,6 +75,11 @@ type MultiConfig struct {
 	// InferencePort is used when a GPU pod declares no container port.
 	// Defaults to 8000 (vLLM).
 	InferencePort int
+
+	// HostEnergy measures non-accelerator (CPU/DRAM) energy per window. It is
+	// optional: when nil, or when it reports Available()==false, host fields are
+	// omitted from every report (absent, never zero — issue #82).
+	HostEnergy provider.HostEnergyProvider
 }
 
 // podState tracks the per-pod scrape state across windows.
@@ -106,6 +111,14 @@ type MultiLoop struct {
 	prevEnergy map[string]float64   // GPU UUID → cumulative joules at last tick
 	prevTime   time.Time
 	windowSeq  uint64
+
+	// hostAvail is resolved once at construction from HostEnergy.Available().
+	// hostBegun tracks whether a host window is currently open; hostWinID names
+	// it. A failed GPU tick leaves the host window open so the next successful
+	// tick spans the gap — the same no-energy-lost semantics as the GPU path.
+	hostAvail bool
+	hostBegun bool
+	hostWinID string
 }
 
 // NewMultiLoop creates a MultiLoop and dials the aggregation service.
@@ -140,13 +153,21 @@ func NewMultiLoop(cfg MultiConfig, log *zap.Logger) (*MultiLoop, error) {
 		return nil, fmt.Errorf("dial aggregation service %q: %w", cfg.AggregatorAddr, err)
 	}
 
-	return &MultiLoop{
+	m := &MultiLoop{
 		cfg:    cfg,
 		log:    log,
 		client: measurementv1.NewMeasurementServiceClient(conn),
 		conn:   conn,
 		pods:   make(map[string]*podState),
-	}, nil
+	}
+	if cfg.HostEnergy != nil {
+		m.hostAvail = cfg.HostEnergy.Available(context.Background())
+		log.Info("host energy capability resolved",
+			zap.String("provider", cfg.HostEnergy.Name()),
+			zap.Bool("available", m.hostAvail),
+		)
+	}
+	return m, nil
 }
 
 // Close releases the gRPC connection.
@@ -202,8 +223,10 @@ func (m *MultiLoop) tick(ctx context.Context) {
 		pods = nil
 	}
 
+	hostJoules := m.hostWindow(ctx)
+
 	if !m.prevTime.IsZero() {
-		m.report(ctx, now, energy, alloc, pods)
+		m.report(ctx, now, energy, alloc, pods, hostJoules)
 	}
 
 	m.prevEnergy = energy
@@ -211,8 +234,40 @@ func (m *MultiLoop) tick(ctx context.Context) {
 	m.prune(pods)
 }
 
+// hostWindow closes the open host energy window (returning its joules) and
+// opens the next one. Returns nil — meaning "omit host fields, never zero" —
+// on the first tick, when no host provider is available, or on any read error.
+func (m *MultiLoop) hostWindow(ctx context.Context) *float64 {
+	if !m.hostAvail {
+		return nil
+	}
+	var result *float64
+	if m.hostBegun {
+		hj, err := m.cfg.HostEnergy.EndWindow(ctx, m.hostWinID)
+		if err != nil {
+			m.log.Warn("host energy window read failed — host fields omitted this window",
+				zap.Error(err))
+		} else {
+			result = &hj
+		}
+	}
+	m.hostWinID = m.nextWindowID("host")
+	if err := m.cfg.HostEnergy.BeginWindow(ctx, m.hostWinID); err != nil {
+		m.log.Warn("host energy window begin failed", zap.Error(err))
+		m.hostBegun = false
+	} else {
+		m.hostBegun = true
+	}
+	return result
+}
+
 // report sends one WindowReport per model pod plus the residual report.
-func (m *MultiLoop) report(ctx context.Context, now time.Time, energy map[string]float64, alloc map[string][]string, pods []gpuPod) {
+// hostJoules is the node's non-accelerator energy for this window (nil when
+// unmeasured). It is split across model pods proportionally to each pod's GPU
+// energy share: CPU work (tokenization, sampling, scheduling) scales with
+// inference intensity, and GPU energy is the intensity signal we already have.
+// With no model GPU energy the host share is unattributable and omitted.
+func (m *MultiLoop) report(ctx context.Context, now time.Time, energy map[string]float64, alloc map[string][]string, pods []gpuPod, hostJoules *float64) {
 	elapsed := now.Sub(m.prevTime).Seconds()
 	if elapsed <= 0 {
 		return
@@ -224,13 +279,27 @@ func (m *MultiLoop) report(ctx context.Context, now time.Time, energy map[string
 	}
 	perPod, residual := attributeEnergy(m.prevEnergy, energy, alloc, uids)
 
+	var modelGPUTotal float64
+	for _, p := range pods {
+		modelGPUTotal += perPod[p.uid]
+	}
+	// Whole-node host power goes on every model window (the aggregation's
+	// host-power gauge is node-level, so identical writes are idempotent);
+	// host *energy* is per-share so the aggregation's counter sums back to
+	// the node total without double counting.
+	var hostWatts *float64
+	if hostJoules != nil {
+		w := *hostJoules / elapsed
+		hostWatts = &w
+	}
+
 	tsMs := now.UnixMilli()
 	for _, p := range pods {
 		st := m.state(p)
 		tokens := m.tokenDelta(ctx, st, p)
 		name := m.resolveModelName(ctx, st, p)
 		joules := perPod[p.uid]
-		m.send(ctx, &measurementv1.WindowReport{
+		rep := &measurementv1.WindowReport{
 			WindowId:          m.nextWindowID(name),
 			Node:              m.cfg.Node,
 			ModelName:         name,
@@ -240,7 +309,14 @@ func (m *MultiLoop) report(ctx context.Context, now time.Time, energy map[string
 			EnergyProvider:    m.cfg.Energy.Name(),
 			InferenceProvider: "vllm",
 			TimestampUnixMs:   tsMs,
-		})
+		}
+		if hostJoules != nil && modelGPUTotal > 0 {
+			share := *hostJoules * (joules / modelGPUTotal)
+			rep.HostEnergyJoules = &share
+			rep.HostPowerWatts = hostWatts
+			rep.HostProvider = m.cfg.HostEnergy.Name()
+		}
+		m.send(ctx, rep)
 	}
 
 	// Residual: energy of GPUs no pod holds. With no model pods at all this
