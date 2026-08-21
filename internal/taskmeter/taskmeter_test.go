@@ -24,9 +24,9 @@ func TestMeterAccumulatesAcrossModels(t *testing.T) {
 	})
 	m.CostPerKWh = 0.36 // makes 3.6e6 J cost exactly $0.36
 
-	m.Record("task-1", "small", 100, 50)  // gpu 100 J, system 150 J
-	m.Record("task-1", "large", 200, 30)  // gpu 300 J, system unmeasured
-	m.Record("task-2", "small", 10, 10)   // separate task
+	m.Record("task-1", "small", 100, 50) // gpu 100 J, system 150 J
+	m.Record("task-1", "large", 200, 30) // gpu 300 J, system unmeasured
+	m.Record("task-2", "small", 10, 10)  // separate task
 
 	got, ok := m.Get("task-1")
 	if !ok {
@@ -163,4 +163,44 @@ func TestProxyEndToEnd(t *testing.T) {
 		t.Errorf("no-identity status = %d, want 400", resp3.StatusCode)
 	}
 	resp3.Body.Close() //nolint:errcheck
+}
+
+// TestProxyDefaultBackend: a model with no route goes to the default backend
+// (the platform-gateway integration) and is still metered; without a default
+// backend the unknown model is rejected.
+func TestProxyDefaultBackend(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5}}`)
+	}))
+	defer backend.Close()
+	bu, _ := url.Parse(backend.URL)
+
+	meter := New(staticSource{"auto": {JPT: 4, At: time.Now()}})
+	proxy := &Proxy{Meter: meter, Backends: map[string]*url.URL{}, DefaultBackend: bu, Log: zap.NewNop()}
+	srv := httptest.NewServer(proxy)
+	defer srv.Close()
+
+	resp, err := http.Post(srv.URL+"/t/agentsvc-42/v1/chat/completions", "application/json",
+		strings.NewReader(`{"model":"auto"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("default-backend status = %d, want 200", resp.StatusCode)
+	}
+	got, ok := meter.Get("agentsvc-42")
+	if !ok || got.Calls != 1 || got.OutputTokens != 5 || got.GPUJoules != 20 {
+		t.Errorf("bill = %+v (ok=%v), want 1 call / 5 tok / 20 J", got, ok)
+	}
+
+	// No default backend → unknown model rejected.
+	strict := httptest.NewServer(&Proxy{Meter: meter, Backends: map[string]*url.URL{}, Log: zap.NewNop()})
+	defer strict.Close()
+	r2, _ := http.Post(strict.URL+"/t/x/v1/chat/completions", "application/json", strings.NewReader(`{"model":"auto"}`))
+	if r2.StatusCode != http.StatusNotFound {
+		t.Errorf("strict mode status = %d, want 404", r2.StatusCode)
+	}
+	r2.Body.Close() //nolint:errcheck
 }

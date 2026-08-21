@@ -26,7 +26,12 @@ const TaskIDHeader = "X-Aitra-Task-Id"
 type Proxy struct {
 	Meter    *Meter
 	Backends map[string]*url.URL // model name → backend base URL
-	Log      *zap.Logger
+	// DefaultBackend receives requests whose model has no Backends entry —
+	// the platform-gateway integration (e.g. xModeling aigateway, which does
+	// its own model routing): the meter only books usage in passing. Nil means
+	// unknown models are rejected.
+	DefaultBackend *url.URL
+	Log            *zap.Logger
 }
 
 // ServeHTTP routes /t/{task}/v1/* and /v1/* to the model's backend.
@@ -54,8 +59,11 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	model, stream := modelAndStream(body)
 	backend, ok := p.Backends[model]
 	if !ok {
-		http.Error(w, fmt.Sprintf(`{"error":"unknown model %q"}`, model), http.StatusNotFound)
-		return
+		if p.DefaultBackend == nil {
+			http.Error(w, fmt.Sprintf(`{"error":"unknown model %q"}`, model), http.StatusNotFound)
+			return
+		}
+		backend = p.DefaultBackend
 	}
 
 	// Streamed completions only carry usage when the client opts in; opt in on

@@ -29,6 +29,7 @@ func main() {
 	listen := flag.String("listen", ":8090", "Listen address")
 	promURL := flag.String("prometheus", "http://aitra-meter-prometheus:9090", "Meter Prometheus base URL (source of per-model J/token)")
 	backends := flag.String("backends", "", "Model routing: model=http://host:port pairs, comma or semicolon separated")
+	defaultBackend := flag.String("default-backend", "", "Upstream for models not in --backends (e.g. a platform gateway that does its own routing); empty rejects unknown models")
 	costPerKWh := flag.Float64("cost-per-kwh", 0, "Electricity cost in USD/kWh; 0 omits cost lines")
 	gco2PerKWh := flag.Float64("gco2-per-kwh", 0, "Grid intensity in gCO2/kWh; 0 omits carbon lines")
 	logLevel := flag.String("log-level", "info", "Log level: debug | info | warn | error")
@@ -41,8 +42,14 @@ func main() {
 	if err != nil {
 		log.Fatal("invalid --backends", zap.Error(err))
 	}
-	if len(routes) == 0 {
-		log.Fatal("--backends is required (model=url pairs)")
+	var defURL *url.URL
+	if *defaultBackend != "" {
+		if defURL, err = url.Parse(*defaultBackend); err != nil {
+			log.Fatal("invalid --default-backend", zap.Error(err))
+		}
+	}
+	if len(routes) == 0 && defURL == nil {
+		log.Fatal("provide --backends (model=url pairs) and/or --default-backend")
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -53,7 +60,7 @@ func main() {
 	meter.CostPerKWh = *costPerKWh
 	meter.GCO2PerKWh = *gco2PerKWh
 
-	proxy := &taskmeter.Proxy{Meter: meter, Backends: routes, Log: log}
+	proxy := &taskmeter.Proxy{Meter: meter, Backends: routes, DefaultBackend: defURL, Log: log}
 
 	mux := http.NewServeMux()
 	mux.Handle("/t/", proxy)
