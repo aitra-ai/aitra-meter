@@ -141,7 +141,11 @@ func (p *RAPLProvider) BeginWindow(_ context.Context, windowID string) error {
 		if err != nil {
 			return fmt.Errorf("rapl BeginWindow read %s: %w", d.energyPath, err)
 		}
-		snap[d.name] = v
+		// Key by the sysfs path, not the label: on a multi-socket node every
+		// socket's DRAM subdomain is labelled plain "dram", so label-keyed
+		// snapshots collide and EndWindow differences one socket's counter
+		// against another's snapshot — a huge cross-counter garbage delta.
+		snap[d.energyPath] = v
 	}
 	p.mu.Lock()
 	p.windows[windowID] = snap
@@ -165,7 +169,7 @@ func (p *RAPLProvider) EndWindow(_ context.Context, windowID string) (float64, e
 
 	var totalUJ uint64
 	for _, d := range p.domains {
-		s, ok := start[d.name]
+		s, ok := start[d.energyPath]
 		if !ok {
 			continue
 		}
@@ -222,7 +226,7 @@ func (p *RAPLProvider) IdlePower(ctx context.Context) (float64, error) {
 	}
 	var totalUJ uint64
 	for _, d := range p.domains {
-		totalUJ += windowDelta(first[d.name], second[d.name], d.maxRangeUJ)
+		totalUJ += windowDelta(first[d.energyPath], second[d.energyPath], d.maxRangeUJ)
 	}
 	joules := float64(totalUJ) / 1e6
 	return joules / dwell.Seconds(), nil
@@ -235,7 +239,7 @@ func (p *RAPLProvider) sample() (map[string]uint64, error) {
 		if err != nil {
 			return nil, fmt.Errorf("rapl sample read %s: %w", d.energyPath, err)
 		}
-		m[d.name] = v
+		m[d.energyPath] = v
 	}
 	return m, nil
 }

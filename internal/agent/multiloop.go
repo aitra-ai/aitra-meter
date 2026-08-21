@@ -250,6 +250,9 @@ func (m *MultiLoop) hostWindow(ctx context.Context) *float64 {
 		} else {
 			result = &hj
 		}
+		m.log.Debug("host window closed",
+			zap.String("window", m.hostWinID),
+			zap.Bool("got_joules", result != nil))
 	}
 	m.hostWinID = m.nextWindowID("host")
 	if err := m.cfg.HostEnergy.BeginWindow(ctx, m.hostWinID); err != nil {
@@ -312,6 +315,8 @@ func (m *MultiLoop) report(ctx context.Context, now time.Time, energy map[string
 		}
 		if hostJoules != nil && modelGPUTotal > 0 {
 			share := *hostJoules * (joules / modelGPUTotal)
+			m.log.Debug("host share attached",
+				zap.String("model", name), zap.Float64("joules", share))
 			rep.HostEnergyJoules = &share
 			rep.HostPowerWatts = hostWatts
 			rep.HostProvider = m.cfg.HostEnergy.Name()

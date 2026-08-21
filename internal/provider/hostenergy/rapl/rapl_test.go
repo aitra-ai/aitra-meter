@@ -178,3 +178,35 @@ func approx(a, b float64) bool {
 	}
 	return d < 1e-9
 }
+
+// TestEndWindowMultiSocketDramCollision is the dual-socket regression: both
+// sockets' DRAM subdomains carry the identical label "dram", so any snapshot
+// keyed by label collides and EndWindow differences one socket's counter
+// against the other's snapshot — on real hardware that produced a ~45×
+// cross-counter garbage delta. Domains must be keyed by their sysfs path.
+func TestEndWindowMultiSocketDramCollision(t *testing.T) {
+	base := t.TempDir()
+	pkg0 := writeDomain(t, base, "intel-rapl:0", "package-0", 1_000_000, 262_143_328_850)
+	dram0 := writeDomain(t, base, "intel-rapl:0:0", "dram", 200_000_000_000, 262_143_328_850)
+	pkg1 := writeDomain(t, base, "intel-rapl:1", "package-1", 5_000_000, 262_143_328_850)
+	dram1 := writeDomain(t, base, "intel-rapl:1:0", "dram", 30_000_000, 262_143_328_850)
+
+	p := newRAPL(base)
+	if err := p.BeginWindow(context.Background(), "w"); err != nil {
+		t.Fatalf("BeginWindow: %v", err)
+	}
+	// Advance every counter by a known amount.
+	setEnergy(t, pkg0, 1_000_000+1_000)
+	setEnergy(t, dram0, 200_000_000_000+2_000)
+	setEnergy(t, pkg1, 5_000_000+3_000)
+	setEnergy(t, dram1, 30_000_000+4_000)
+
+	got, err := p.EndWindow(context.Background(), "w")
+	if err != nil {
+		t.Fatalf("EndWindow: %v", err)
+	}
+	want := float64(1_000+2_000+3_000+4_000) / 1e6
+	if got != want {
+		t.Errorf("EndWindow = %v J, want %v J (label-keyed snapshots collide across sockets)", got, want)
+	}
+}
