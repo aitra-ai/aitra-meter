@@ -43,6 +43,9 @@ spec:
             - --energy-provider={{ .Values.measurementAgent.energyProvider.type }}
             {{- with .Values.measurementAgent.hostEnergyProvider }}
             - --host-energy-provider={{ .type }}
+            {{- if eq .type "rapl" }}
+            - --host-energy-path=/host/sys/class/powercap
+            {{- end }}
             {{- end }}
             - --inference-provider={{ .Values.measurementAgent.inferenceProvider.type }}
             {{- if .Values.measurementAgent.inferenceProvider.config.endpoint }}
@@ -103,10 +106,18 @@ spec:
               readOnly: true
             {{- end }}
             {{- if $rapl }}
-            # RAPL reads /sys/class/powercap. Mounted explicitly so the counters
-            # are visible in the pod rather than relying on the default /sys mount.
+            # RAPL counters, re-mounted under /host/sys: container runtimes mask
+            # /sys/devices/virtual/powercap with an empty tmpfs as a RAPL
+            # side-channel mitigation, so a bind mount at the native /sys path is
+            # silently shadowed. The class dir's relative symlinks
+            # (../../devices/virtual/powercap/...) still resolve because both
+            # trees sit at the same relative offset under /host; the agent is
+            # pointed here via --host-energy-path.
             - name: powercap
-              mountPath: /sys/class/powercap
+              mountPath: /host/sys/class/powercap
+              readOnly: true
+            - name: powercap-devices
+              mountPath: /host/sys/devices/virtual/powercap
               readOnly: true
             {{- end }}
             {{- if $hwmon }}
@@ -130,6 +141,9 @@ spec:
         - name: powercap
           hostPath:
             path: /sys/class/powercap
+        - name: powercap-devices
+          hostPath:
+            path: /sys/devices/virtual/powercap
             type: Directory
         {{- end }}
         {{- if $hwmon }}
