@@ -9,9 +9,7 @@ not estimated; agent-task bills come from the task-gateway (PR #102).
 |---|---|---|---|
 | Demo hub | `landing/` | static file server (any) | one bilingual page linking every surface |
 | Demo console | `console/` | Deployment (`deploy/demo-control.yaml`) | health banner · GPU rack drag-and-drop (drop a model onto a GPU to start it) · traffic combos/sweeps · agent-scenario launcher |
-| Agent energy panel | `agent-panel/` | Deployment (`deploy/agent-demo-panel.yaml`) | one-click multi-step agent scenarios with a live per-task energy bill |
 | Visitor agent chat | `booth-agent/` | docker container (host level) | the "try it yourself" entry: chat with a tool-using agent (CCB headless engine, one process + private workdir per session) with the session's energy bill pinned to the page |
-| Sandbox agent | `sandbox/` | docker container | minimal web agent used to demonstrate platform-sandbox integration (task id rides in `OPENAI_BASE_URL`) |
 
 ## Prerequisites
 
@@ -20,8 +18,8 @@ not estimated; agent-task bills come from the task-gateway (PR #102).
 - vLLM models that will serve agent traffic need tool calling enabled:
   `--enable-auto-tool-choice --tool-call-parser qwen3_xml` and a context
   window of at least 32k (agent system prompts alone exceed 4k tokens).
-- `booth-agent` and `sandbox` additionally need a build of CCB
-  (claude-code-best) — `node dist/cli.js` — mounted at `/ccb`.
+- `booth-agent` additionally needs a build of CCB (claude-code-best) —
+  `node dist/cli.js` — mounted at `/ccb`.
 
 ## Configuration (no secrets in code)
 
@@ -32,15 +30,14 @@ keys or site addresses.
 |---|---|---|
 | `ACCESS_KEY` | console | gate key; served 401 without it (store in a Secret) |
 | `PROM_URL` | console | meter Prometheus base URL |
-| `TASK_GW` | console, agent-panel, booth-agent, sandbox | task-gateway base URL (in-cluster DNS by default; NodePort when running as a host container) |
+| `TASK_GW` | console, booth-agent | task-gateway base URL (in-cluster DNS by default; NodePort when running as a host container) |
 | `AGENT_MODELS` | booth-agent | comma list of selectable models (first = default) |
-| `AGENT_MODEL` | sandbox | model the sandbox agent uses |
-| `CCB_ENTRY` | booth-agent, sandbox driver | path to CCB `cli.js` (default `/ccb/cli.js`) |
+| `CCB_ENTRY` | booth-agent | path to CCB `cli.js` (default `/ccb/cli.js`) |
 
 ## Launch sketches
 
 ```sh
-# console + agent panel: ConfigMap-mounted apps (see deploy/*.yaml)
+# console: ConfigMap-mounted app (see deploy/demo-control.yaml)
 kubectl -n aitra-system create configmap demo-control-app \
   --from-file=demos/console/app.py --from-file=demos/console/index.html
 kubectl apply -f deploy/demo-control.yaml
@@ -63,7 +60,7 @@ docker run -d --restart=always -p 80:80 -v $PWD/demos/landing:/www:ro \
 - The console needs RBAC for the rack view: `deployments` get +
   `deployments/scale` get/update/patch, restricted by `resourceNames` to the
   fleet deployments (see the Role in `deploy/demo-control.yaml`).
-- Sessions in booth-agent/agent-panel are in-memory by design (booth
+- Sessions in booth-agent are in-memory by design (booth
   ephemerality); bills persist in the task-gateway.
 - Attribution semantics for every bill shown: `token-share` — proportional
   attribution over batched serving, same contract as the host-energy split.
