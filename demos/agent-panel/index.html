@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Aitra · Agent Energy Demo</title>
+<style>
+  :root{--bg:#0f1420;--card:#171e2e;--line:#26304a;--txt:#e6ebf5;--soft:#8b96ad;--acc:#4ea1ff;--ok:#3ecf8e;--warn:#f5a623;--err:#f06767}
+  *{box-sizing:border-box;margin:0}
+  body{background:var(--bg);color:var(--txt);font:14px/1.5 -apple-system,"PingFang SC",sans-serif;padding:24px;max-width:1180px;margin:0 auto}
+  .top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+  h1{font-size:19px;margin-bottom:4px}
+  .sub{color:var(--soft);font-size:12.5px;margin-bottom:18px}
+  #lang{border:1px solid var(--line);background:transparent;color:var(--soft);border-radius:6px;
+        padding:6px 12px;font-size:13px;cursor:pointer;flex-shrink:0}
+  .cols{display:grid;grid-template-columns:340px 1fr;gap:18px;align-items:start}
+  @media(max-width:900px){.cols{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+  h2{font-size:12.5px;color:var(--soft);letter-spacing:.08em;margin-bottom:12px}
+  .scen{display:block;width:100%;text-align:left;background:#1d2740;border:1px solid var(--line);color:var(--txt);
+        border-radius:9px;padding:11px 13px;margin-bottom:9px;cursor:pointer;font-size:13.5px}
+  .scen:hover{border-color:var(--acc)}
+  .scen small{display:block;color:var(--soft);font-size:11.5px;margin-top:2px}
+  .scen:disabled{opacity:.45;cursor:wait}
+  .runitem{padding:7px 10px;border-radius:7px;cursor:pointer;font-size:12.5px;display:flex;justify-content:space-between;gap:8px}
+  .runitem:hover,.runitem.sel{background:#1d2740}
+  .runitem .st-running{color:var(--warn)} .runitem .st-done{color:var(--ok)} .runitem .st-error{color:var(--err)}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:10px;margin-bottom:16px}
+  .tile{background:#131a2b;border:1px solid var(--line);border-radius:10px;padding:11px 13px}
+  .tile .k{color:var(--soft);font-size:11px;letter-spacing:.06em;margin-bottom:4px}
+  .tile .v{font-size:21px;font-weight:650;font-variant-numeric:tabular-nums}
+  .tile .u{font-size:11.5px;color:var(--soft);margin-left:3px}
+  ol.steps{list-style:none;margin-bottom:16px}
+  ol.steps li{display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid var(--line);font-size:13px}
+  ol.steps li:last-child{border-bottom:0}
+  .dot{width:10px;height:10px;border-radius:50%;flex:none;background:#3a4560}
+  .dot.running{background:var(--warn);animation:p 1s infinite}
+  .dot.done{background:var(--ok)} .dot.error{background:var(--err)}
+  @keyframes p{50%{opacity:.3}}
+  .stitle{width:82px;flex:none;font-weight:600}
+  .smodel{width:170px;flex:none;color:var(--acc);font-size:12px}
+  .ssnip{color:var(--soft);font-size:12px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;flex:1}
+  .stok{flex:none;color:var(--soft);font-size:12px;font-variant-numeric:tabular-nums}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{padding:7px 10px;text-align:left;font-variant-numeric:tabular-nums}
+  th{color:var(--soft);font-size:11px;letter-spacing:.06em;border-bottom:1px solid var(--line)}
+  tr+tr td{border-top:1px solid var(--line)}
+  td.num,th.num{text-align:right}
+  .bar{height:6px;border-radius:3px;background:var(--acc);min-width:2px}
+  .empty{color:var(--soft);padding:18px;text-align:center;font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="top"><div>
+  <h1 data-i18n="title"></h1>
+  <div class="sub" data-i18n="sub"></div>
+</div><button id="lang">EN</button></div>
+
+<div class="cols">
+  <div>
+    <div class="card">
+      <h2 data-i18n="launch"></h2>
+      <div id="scens"></div>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <h2 data-i18n="history"></h2>
+      <div id="runs"><div class="empty" data-i18n="none"></div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 id="rtitle"></h2>
+    <ol class="steps" id="steps"><div class="empty" data-i18n="pick"></div></ol>
+
+    <div class="tiles">
+      <div class="tile"><div class="k" data-i18n="calls"></div><div class="v" id="calls">—</div></div>
+      <div class="tile"><div class="k" data-i18n="tok"></div><div class="v" id="tok">—</div></div>
+      <div class="tile"><div class="k" data-i18n="gpu"></div><div class="v" id="gpu">—<span class="u">J</span></div></div>
+      <div class="tile"><div class="k" data-i18n="sys"></div><div class="v" id="sys">—<span class="u">J</span></div></div>
+      <div class="tile"><div class="k" data-i18n="cost"></div><div class="v" id="usd">—<span class="u">$</span></div></div>
+      <div class="tile"><div class="k" data-i18n="co2"></div><div class="v" id="co2">—<span class="u">g</span></div></div>
+    </div>
+
+    <h2 data-i18n="byModel"></h2>
+    <table><thead><tr><th data-i18n="thModel"></th><th class="num" data-i18n="thCalls"></th><th class="num">out tok</th><th class="num">GPU J</th><th style="width:28%" data-i18n="thShare"></th></tr></thead>
+      <tbody id="models"><tr><td colspan="5" class="empty">—</td></tr></tbody></table>
+  </div>
+</div>
+
+<script>
+const I18N = {
+  zh: {
+    title:'Agent 能耗演示台',
+    sub:'发起一个多步 agent 任务 → 实时看执行过程与能耗账单 · 链路:面板 → task-gateway → 8×H100 vLLM · 归因 token-share',
+    launch:'发起任务', history:'历史任务', none:'暂无', pick:'点左侧任一场景发起任务',
+    calls:'调用', tok:'输出 TOK', gpu:'GPU 能耗', sys:'系统能耗(含主机)', cost:'电费', co2:'碳排',
+    byModel:'按模型拆分', thModel:'模型', thCalls:'调用', thShare:'能耗占比',
+    exec:'执行过程', external:'执行过程在任务自己的界面里,这里看账单',
+    st:{running:'运行中',done:'完成',error:'出错'},
+    scenIcon:{coding:'🛠',research:'🔍',cheap:'💰'},
+    scenName:{coding:'编码任务(大模型规划,小模型执行)',research:'深度研究(MoE 综合)',cheap:'全小模型流水线(成本对照)'},
+    scenDesc:{coding:'27b 规划 → 2b 执行×3 → 122B 评审 → 9b 总结',
+              research:'27b 提纲 → 9b 调研×3 → 35B-MoE 综合',
+              cheap:'2b/4b 全程 · 成本对照组'},
+    busy:'已有任务在运行,请稍候',
+  },
+  en: {
+    title:'Agent Energy Demo',
+    sub:'Launch a multi-step agent task → watch execution and the energy bill live · Path: panel → task-gateway → 8×H100 vLLM · token-share attribution',
+    launch:'Launch a task', history:'History', none:'None yet', pick:'Pick a scenario on the left',
+    calls:'CALLS', tok:'OUTPUT TOK', gpu:'GPU ENERGY', sys:'SYSTEM (INCL. HOST)', cost:'COST', co2:'CO₂',
+    byModel:'By model', thModel:'Model', thCalls:'Calls', thShare:'Energy share',
+    exec:'Execution', external:'Execution lives in the task\'s own UI; the bill is here',
+    st:{running:'running',done:'done',error:'error'},
+    scenIcon:{coding:'🛠',research:'🔍',cheap:'💰'},
+    scenName:{coding:'Coding task (plan big, execute small)',research:'Deep research (MoE synthesis)',cheap:'All-small pipeline (cost control)'},
+    scenDesc:{coding:'27b plan → 2b act ×3 → 122B review → 9b summary',
+              research:'27b outline → 9b research ×3 → 35B-MoE synthesis',
+              cheap:'2b/4b only · the cost-control group'},
+    busy:'A task is already running, please wait',
+  },
+};
+let lang = localStorage.getItem('agentdemo_lang') ||
+           (navigator.language && navigator.language.startsWith('zh') ? 'zh' : 'en');
+const T = () => I18N[lang];
+const L = (v) => (v && typeof v === 'object') ? (v[lang] || v.zh || v.en) : v;
+function applyStatic() {
+  document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = T()[el.dataset.i18n] || ''; });
+  document.getElementById('lang').textContent = lang === 'zh' ? 'EN' : '中文';
+  document.documentElement.lang = lang;
+  buildScens();
+}
+document.getElementById('lang').onclick = () => {
+  lang = lang === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('agentdemo_lang', lang);
+  applyStatic(); tick();
+};
+
+let current = null, scenNames = null;
+const fmt=(n,d=1)=>n==null?"—":Number(n).toLocaleString("en-US",{maximumFractionDigits:d});
+
+function buildScens() {
+  const box = document.getElementById('scens');
+  box.innerHTML = '';
+  ['coding','research','cheap'].forEach(k => {
+    const b = document.createElement('button');
+    b.className = 'scen';
+    const name = (scenNames && scenNames[k]) ? L(scenNames[k]) : T().scenName[k];
+    b.innerHTML = `${T().scenIcon[k]} ${name}<small>${T().scenDesc[k]}</small>`;
+    b.onclick = async () => {
+      b.disabled = true;
+      try {
+        const r = await fetch('api/run', {method:'POST', headers:{'Content-Type':'application/json'},
+                                          body: JSON.stringify({scenario:k})});
+        const j = await r.json();
+        if (j.task_id) current = j.task_id;
+        else if (r.status === 409) alert(T().busy);
+      } finally { setTimeout(()=>b.disabled=false, 1500); }
+    };
+    box.appendChild(b);
+  });
+}
+
+async function tick(){
+  try{
+    const runs=await (await fetch("api/runs")).json();
+    if (!scenNames) {
+      scenNames = {};
+      runs.forEach(r => { if (r.scenario !== 'external') scenNames[r.scenario] = r.name; });
+      buildScens();
+    }
+    const rl=document.getElementById("runs");
+    rl.innerHTML=runs.map(r=>`<div class="runitem ${r.task_id===current?"sel":""}" onclick="current='${r.task_id}'">
+        <span>${r.task_id}</span><span class="st-${r.status}">${T().st[r.status]||r.status}</span></div>`).join("")
+      || `<div class="empty">${T().none}</div>`;
+    if(!current && runs.length) current=runs[0].task_id;
+    if(!current) return;
+
+    const rr=await fetch("api/run/"+current);
+    const run=rr.ok?await rr.json():{name:null,steps:[]};
+    document.getElementById("rtitle").textContent=`${T().exec} — ${run.name?L(run.name):current}`;
+    document.getElementById("steps").innerHTML=(run.steps||[]).map(s=>`<li>
+        <span class="dot ${s.status}"></span><span class="stitle">${L(s.title)}</span>
+        <span class="smodel">${s.model}</span>
+        <span class="ssnip">${s.snippet||""}</span>
+        <span class="stok">${s.tokens?("+"+s.tokens+" tok"):""}</span></li>`).join("")
+      || `<div class="empty">${T().external}</div>`;
+
+    const tr=await fetch("api/tasks/"+current);
+    if(!tr.ok) return;
+    const t=await tr.json();
+    document.getElementById("calls").textContent=fmt(t.calls,0);
+    document.getElementById("tok").textContent=fmt(t.output_tokens,0);
+    document.getElementById("gpu").innerHTML=fmt(t.gpu_joules)+'<span class="u">J</span>';
+    document.getElementById("sys").innerHTML=(t.system_joules?fmt(t.system_joules):"—")+'<span class="u">J</span>';
+    document.getElementById("usd").innerHTML=(t.cost_usd?t.cost_usd.toFixed(6):"—")+'<span class="u">$</span>';
+    document.getElementById("co2").innerHTML=(t.co2_grams?t.co2_grams.toFixed(3):"—")+'<span class="u">g</span>';
+    const total=t.gpu_joules||1;
+    document.getElementById("models").innerHTML=(t.by_model||[]).map(m=>`<tr>
+        <td>${m.model}</td><td class="num">${m.calls}</td><td class="num">${fmt(m.output_tokens,0)}</td>
+        <td class="num">${fmt(m.gpu_joules)}</td>
+        <td><div class="bar" style="width:${(100*m.gpu_joules/total).toFixed(1)}%"></div></td></tr>`).join("")
+      || '<tr><td colspan="5" class="empty">—</td></tr>';
+  }catch{}
+}
+applyStatic(); setInterval(tick,1000); tick();
+</script>
+</body>
+</html>

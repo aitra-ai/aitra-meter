@@ -1,0 +1,69 @@
+# Agent energy demo panel — launches scripted multi-step agent tasks through
+# the task-gateway and shows the live per-task energy bill (bilingual zh/EN).
+# Same pattern as demo-control: stdlib-python app mounted from a ConfigMap
+# (create it from files: kubectl -n aitra-system create configmap
+# agent-demo-panel-app --from-file=serve.py --from-file=index.html).
+# The vLLM image is reused purely as the node-local python runtime.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-demo-panel
+  namespace: aitra-system
+  labels:
+    app: agent-demo-panel
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agent-demo-panel
+  template:
+    metadata:
+      labels:
+        app: agent-demo-panel
+    spec:
+      containers:
+        - name: panel
+          image: vllm/vllm-openai:v0.19.0
+          imagePullPolicy: Never
+          command: ["python3", "/app/serve.py"]
+          env:
+            - name: TASK_GW
+              value: http://aitra-meter-task-gateway.aitra-system:8090
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /api/runs
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 10
+          volumeMounts:
+            - name: app
+              mountPath: /app
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+      volumes:
+        - name: app
+          configMap:
+            name: agent-demo-panel-app
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-demo-panel
+  namespace: aitra-system
+  labels:
+    app: agent-demo-panel
+spec:
+  type: NodePort
+  selector:
+    app: agent-demo-panel
+  ports:
+    - port: 8080
+      targetPort: 8080
+      nodePort: 30855

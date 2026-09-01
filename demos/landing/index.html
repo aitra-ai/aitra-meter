@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Aitra Meter · Demo Hub</title>
+<style>
+  :root{--bg:#0f1420;--card:#171e2e;--line:#26304a;--txt:#e6ebf5;--soft:#8b96ad;--acc:#4ea1ff;--gold:#E8A020;--ok:#3ecf8e}
+  *{box-sizing:border-box;margin:0}
+  body{background:var(--bg);color:var(--txt);font:15px/1.6 -apple-system,"PingFang SC",system-ui,sans-serif;
+       padding:40px 20px;max-width:880px;margin:0 auto}
+  .top{display:flex;justify-content:space-between;align-items:flex-start}
+  h1{font-size:26px}
+  .sub{color:var(--soft);font-size:14px;margin:6px 0 30px}
+  #lang{border:1px solid var(--line);background:transparent;color:var(--soft);border-radius:6px;
+        padding:6px 12px;font-size:13px;cursor:pointer}
+  a.card{display:block;background:var(--card);border:1px solid var(--line);border-radius:12px;
+         padding:18px 22px;margin-bottom:14px;text-decoration:none;color:var(--txt);
+         transition:border-color .15s}
+  a.card:hover{border-color:var(--acc)}
+  .name{font-size:16.5px;font-weight:650}
+  .name .em{margin-right:10px}
+  .desc{color:var(--soft);font-size:13px;margin-top:4px}
+  .url{color:var(--acc);font-size:12px;font-family:ui-monospace,Menlo,monospace;margin-top:6px}
+  .tag{display:inline-block;font-size:11px;border:1px solid var(--gold);color:var(--gold);
+       border-radius:4px;padding:1px 7px;margin-left:8px;vertical-align:2px}
+  .foot{color:var(--soft);font-size:12px;margin-top:26px}
+</style>
+</head>
+<body>
+<div class="top"><h1>⚡ Aitra Meter <span style="color:var(--soft);font-weight:400" data-i18n="hub"></span></h1>
+<button id="lang">EN</button></div>
+<div class="sub" data-i18n="sub"></div>
+
+<div id="cards"></div>
+
+<div class="foot" data-i18n="foot"></div>
+
+<script>
+const HOST = location.hostname;
+const I18N = {
+  zh: {
+    hub: '演示导航', sub: 'AI 推理能耗计量 · 8×H100 真机实测 · 全部入口如下',
+    foot: '内网演示环境 · 密钥类入口的钥匙见讲解手册 · Aitra Meter',
+    cards: [
+      ['🎛', '演示控制台', '健康横幅 · H100 机架拖拽(模型拖上卡即启动)· 流量组合/扫描/脉冲 · Agent 演示', ':30853/?k=', 'KEY'],
+      ['🤖', 'Agent 能耗演示台', '一键发起多步 agent 任务,实时看执行步骤与能耗账单(J/$/gCO₂,按模型拆分)', ':30855', ''],
+      ['🧑‍💻', '试用 Agent(观众入口)', '和 xModeling 同引擎的 agent:给它任务,它在沙箱里写文件跑命令,能耗账单实时挂在页顶', ':32046', ''],
+      ['🧪', '沙箱 Agent', 'xModeling 式沙箱容器:输入任意目标,agent 现场执行,账单在演示台查看', ':32045', ''],
+      ['📊', 'Grafana 看板', 'Demo A 8 模型全景 / Demo B TP 扩展 / Demo C 负载形态对比', ':30852', ''],
+      ['📋', 'Meter 全指标看板', '每一个 aitra_* 指标 · GPU+主机能耗 · 30 天 chargeback', ':30851/board', ''],
+      ['🔌', '任务账单 API', 'task-gateway:GET /tasks 列全部任务账单(agent 接入点)', ':30854/tasks', ''],
+    ],
+  },
+  en: {
+    hub: 'Demo Hub', sub: 'AI inference energy metering · live on 8×H100 · all entry points below',
+    foot: 'Intranet demo environment · keys for gated entries are in the runbook · Aitra Meter',
+    cards: [
+      ['🎛', 'Demo Console', 'Health banner · H100 rack drag-and-drop (drop a model on a GPU to start it) · traffic combos/sweep/burst · agent demos', ':30853/?k=', 'KEY'],
+      ['🤖', 'Agent Energy Demo', 'Launch a multi-step agent task; watch steps and the energy bill live (J/$/gCO₂, per-model split)', ':30855', ''],
+      ['🧑‍💻', 'Try the Agent (visitor entry)', 'Same engine as the xModeling agent: give it a task, it writes files and runs commands in a sandbox with the live energy bill pinned on top', ':32046', ''],
+      ['🧪', 'Sandbox Agent', 'xModeling-style sandbox container: give it any goal, watch it execute; the bill shows up in the demo panel', ':32045', ''],
+      ['📊', 'Grafana Dashboards', 'Demo A 8-model fleet / Demo B TP scaling / Demo C workload contrast', ':30852', ''],
+      ['📋', 'Meter Board', 'Every aitra_* signal · GPU + host energy · 30-day chargeback', ':30851/board', ''],
+      ['🔌', 'Task Bill API', 'task-gateway: GET /tasks lists every task bill (the agent integration point)', ':30854/tasks', ''],
+    ],
+  },
+};
+let lang = localStorage.getItem('hub_lang') ||
+           (navigator.language && navigator.language.startsWith('zh') ? 'zh' : 'en');
+function render() {
+  const T = I18N[lang];
+  document.querySelectorAll('[data-i18n]').forEach(el => el.textContent = T[el.dataset.i18n]);
+  document.getElementById('lang').textContent = lang === 'zh' ? 'EN' : '中文';
+  document.documentElement.lang = lang;
+  document.getElementById('cards').innerHTML = T.cards.map(([em, name, desc, path, tag]) => {
+    const url = 'http://' + HOST + path;
+    return `<a class="card" href="${url}" target="_blank">
+      <div class="name"><span class="em">${em}</span>${name}${tag ? `<span class="tag">${tag}</span>` : ''}</div>
+      <div class="desc">${desc}</div><div class="url">${url}</div></a>`;
+  }).join('');
+}
+document.getElementById('lang').onclick = () => {
+  lang = lang === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('hub_lang', lang); render();
+};
+render();
+</script>
+</body>
+</html>
