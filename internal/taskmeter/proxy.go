@@ -76,13 +76,13 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rp := &httputil.ReverseProxy{
-		Director: func(req *http.Request) {
-			req.URL.Scheme = backend.Scheme
-			req.URL.Host = backend.Host
-			req.URL.Path = rest
-			req.Host = backend.Host
-			req.Body = io.NopCloser(bytes.NewReader(body))
-			req.ContentLength = int64(len(body))
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			pr.Out.URL.Scheme = backend.Scheme
+			pr.Out.URL.Host = backend.Host
+			pr.Out.URL.Path = rest
+			pr.Out.Host = backend.Host
+			pr.Out.Body = io.NopCloser(bytes.NewReader(body))
+			pr.Out.ContentLength = int64(len(body))
 		},
 		ModifyResponse: func(resp *http.Response) error {
 			if resp.StatusCode != http.StatusOK {
