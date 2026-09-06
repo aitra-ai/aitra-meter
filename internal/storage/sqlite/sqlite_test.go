@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 	"time"
 
@@ -104,6 +105,43 @@ func TestWriteAndQueryChargeback(t *testing.T) {
 	}
 	if prod.OutputTokens != 1000 {
 		t.Errorf("prod tokens: got %d, want 1000", prod.OutputTokens)
+	}
+}
+
+// TestHostEnergyRoundTripAbsentIsNotZero protects the central contract of issue
+// #82 at the storage boundary: a nil HostEnergyJoules must persist as SQL NULL
+// (not measured), never as 0. A record that did measure host energy persists the
+// value.
+func TestHostEnergyRoundTrip(t *testing.T) {
+	b := newTestBackend(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	hostJ := 42.5
+	records := []model.MeasurementRecord{
+		{TimestampUnixMs: now.UnixMilli(), Cluster: "c", Node: "measured", Namespace: "ns", HostEnergyJoules: &hostJ},
+		{TimestampUnixMs: now.UnixMilli(), Cluster: "c", Node: "unmeasured", Namespace: "ns", HostEnergyJoules: nil},
+	}
+	if err := b.WriteBatch(ctx, records); err != nil {
+		t.Fatalf("WriteBatch: %v", err)
+	}
+
+	read := func(node string) sql.NullFloat64 {
+		var v sql.NullFloat64
+		err := b.db.QueryRowContext(ctx,
+			`SELECT host_energy_joules FROM aitra_measurements WHERE node = ?`, node).Scan(&v)
+		if err != nil {
+			t.Fatalf("scan %s: %v", node, err)
+		}
+		return v
+	}
+
+	if got := read("measured"); !got.Valid || got.Float64 != hostJ {
+		t.Fatalf("measured node: got %+v, want valid %v", got, hostJ)
+	}
+	// The one that matters: unmeasured must be NULL, never 0.
+	if got := read("unmeasured"); got.Valid {
+		t.Fatalf("unmeasured node: got valid=%v value=%v, want SQL NULL (not measured)", got.Valid, got.Float64)
 	}
 }
 

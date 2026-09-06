@@ -1,0 +1,76 @@
+# Task gateway — agent-task energy metering (see internal/taskmeter).
+# OpenAI-compatible reverse proxy: agents (e.g. xModeling sandbox instances)
+# point OPENAI_BASE_URL at http://<gateway>/t/<task-id>/v1 and every call's
+# token usage is joined with the live per-model J/token into a task bill.
+# Bills: GET /tasks and /tasks/{id}.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aitra-meter-task-gateway
+  namespace: aitra-system
+  labels:
+    app: aitra-meter
+    component: task-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aitra-meter
+      component: task-gateway
+  template:
+    metadata:
+      labels:
+        app: aitra-meter
+        component: task-gateway
+    spec:
+      containers:
+        - name: task-gateway
+          image: aitra-meter/task-gateway:dev
+          imagePullPolicy: Never
+          args:
+            - --listen=:8090
+            - --prometheus=http://aitra-meter-prometheus.aitra-system:9090
+            - --cost-per-kwh=0.12
+            - --gco2-per-kwh=400
+            - >-
+              --backends=qwen3.5-0.8b=http://vllm-q35-0p8b.aitra-system:8000,
+              qwen3.5-2b=http://vllm-q35-2b.aitra-system:8000,
+              qwen3.5-4b=http://vllm-q35-4b.aitra-system:8000,
+              qwen3.5-9b=http://vllm-q35-9b.aitra-system:8000,
+              qwen3.5-122b-a10b-int4=http://vllm-q35-122b-int4.aitra-system:8000,
+              qwen3.6-27b=http://vllm-q36-27b.aitra-system:8000,
+              qwen3.6-27b-fp8=http://vllm-q36-27b-fp8.aitra-system:8000,
+              qwen3.6-35b-a3b-fp8=http://vllm-q36-35b-fp8.aitra-system:8000
+          ports:
+            - containerPort: 8090
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8090
+            initialDelaySeconds: 2
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: "1"
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aitra-meter-task-gateway
+  namespace: aitra-system
+  labels:
+    app: aitra-meter
+    component: task-gateway
+spec:
+  type: NodePort
+  selector:
+    app: aitra-meter
+    component: task-gateway
+  ports:
+    - port: 8090
+      targetPort: 8090
+      nodePort: 30854

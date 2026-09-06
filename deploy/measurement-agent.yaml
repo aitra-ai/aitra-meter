@@ -37,6 +37,8 @@ spec:
             - --energy-endpoint=http://dcgm-exporter.aitra-system:9400/metrics
             - --aggregator=aitra-meter-aggregation:9091
             - --window-seconds=5
+            - --host-energy-provider=rapl
+            - --host-energy-path=/host/sys/class/powercap
             - --log-level=info
           env:
             - name: NODE_NAME
@@ -47,14 +49,34 @@ spec:
             - name: device-plugins
               mountPath: /var/lib/kubelet/device-plugins
               readOnly: true
+            # RAPL host energy (issue #82): energy_uj is root-read-only since
+            # CVE-2020-8694; the agent already runs as root for the checkpoint.
+            # Mounted under /host/sys (not /sys) because container runtimes mask
+            # /sys/devices/virtual/powercap with an empty tmpfs as a RAPL
+            # side-channel mitigation — a bind mount at the native path is
+            # silently shadowed. The class dir's relative symlinks
+            # (../../devices/virtual/powercap/...) still resolve because both
+            # trees are mounted at the same relative offset under /host.
+            - name: powercap
+              mountPath: /host/sys/class/powercap
+              readOnly: true
+            - name: powercap-devices
+              mountPath: /host/sys/devices/virtual/powercap
+              readOnly: true
           resources:
             requests:
               cpu: 50m
-              memory: 64Mi
+              memory: 128Mi
             limits:
               cpu: 200m
-              memory: 128Mi
+              memory: 512Mi
       volumes:
         - name: device-plugins
           hostPath:
             path: /var/lib/kubelet/device-plugins
+        - name: powercap
+          hostPath:
+            path: /sys/class/powercap
+        - name: powercap-devices
+          hostPath:
+            path: /sys/devices/virtual/powercap

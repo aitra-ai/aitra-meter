@@ -47,8 +47,18 @@ type WindowReport struct {
 	InferenceProvider string `protobuf:"bytes,10,opt,name=inference_provider,json=inferenceProvider,proto3" json:"inference_provider,omitempty"`
 	// Unix timestamp in milliseconds at the end of the window.
 	TimestampUnixMs int64 `protobuf:"varint,11,opt,name=timestamp_unix_ms,json=timestampUnixMs,proto3" json:"timestamp_unix_ms,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Host energy consumed during this window in joules — everything on the node
+	// that is not the accelerator (CPU package, DRAM, and depending on the
+	// provider the wider board). Unset when the node exposes no host telemetry; an
+	// unset field means "not measured", which is deliberately not the same as zero.
+	HostEnergyJoules *float64 `protobuf:"fixed64,12,opt,name=host_energy_joules,json=hostEnergyJoules,proto3,oneof" json:"host_energy_joules,omitempty"`
+	// Host power draw snapshot at window end, in watts. Unset when unavailable.
+	HostPowerWatts *float64 `protobuf:"fixed64,13,opt,name=host_power_watts,json=hostPowerWatts,proto3,oneof" json:"host_power_watts,omitempty"`
+	// Host energy provider identifier (e.g. "rapl", "grace-hwmon"). Empty when host
+	// energy is unavailable. Used for the provider / host_provider metric labels.
+	HostProvider  string `protobuf:"bytes,14,opt,name=host_provider,json=hostProvider,proto3" json:"host_provider,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *WindowReport) Reset() {
@@ -158,6 +168,27 @@ func (x *WindowReport) GetTimestampUnixMs() int64 {
 	return 0
 }
 
+func (x *WindowReport) GetHostEnergyJoules() float64 {
+	if x != nil && x.HostEnergyJoules != nil {
+		return *x.HostEnergyJoules
+	}
+	return 0
+}
+
+func (x *WindowReport) GetHostPowerWatts() float64 {
+	if x != nil && x.HostPowerWatts != nil {
+		return *x.HostPowerWatts
+	}
+	return 0
+}
+
+func (x *WindowReport) GetHostProvider() string {
+	if x != nil {
+		return x.HostProvider
+	}
+	return ""
+}
+
 // WindowAck is returned by the aggregation service after processing a report.
 type WindowAck struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -209,7 +240,7 @@ var File_measurement_v1_measurement_proto protoreflect.FileDescriptor
 
 const file_measurement_v1_measurement_proto_rawDesc = "" +
 	"\n" +
-	" measurement/v1/measurement.proto\x12\x0emeasurement.v1\"\xf5\x02\n" +
+	" measurement/v1/measurement.proto\x12\x0emeasurement.v1\"\xa8\x04\n" +
 	"\fWindowReport\x12\x1b\n" +
 	"\twindow_id\x18\x01 \x01(\tR\bwindowId\x12\x12\n" +
 	"\x04node\x18\x02 \x01(\tR\x04node\x12\x1d\n" +
@@ -224,7 +255,12 @@ const file_measurement_v1_measurement_proto_rawDesc = "" +
 	"\x0fenergy_provider\x18\t \x01(\tR\x0eenergyProvider\x12-\n" +
 	"\x12inference_provider\x18\n" +
 	" \x01(\tR\x11inferenceProvider\x12*\n" +
-	"\x11timestamp_unix_ms\x18\v \x01(\x03R\x0ftimestampUnixMs\"'\n" +
+	"\x11timestamp_unix_ms\x18\v \x01(\x03R\x0ftimestampUnixMs\x121\n" +
+	"\x12host_energy_joules\x18\f \x01(\x01H\x00R\x10hostEnergyJoules\x88\x01\x01\x12-\n" +
+	"\x10host_power_watts\x18\r \x01(\x01H\x01R\x0ehostPowerWatts\x88\x01\x01\x12#\n" +
+	"\rhost_provider\x18\x0e \x01(\tR\fhostProviderB\x15\n" +
+	"\x13_host_energy_joulesB\x13\n" +
+	"\x11_host_power_watts\"'\n" +
 	"\tWindowAck\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted2]\n" +
 	"\x12MeasurementService\x12G\n" +
@@ -262,6 +298,7 @@ func file_measurement_v1_measurement_proto_init() {
 	if File_measurement_v1_measurement_proto != nil {
 		return
 	}
+	file_measurement_v1_measurement_proto_msgTypes[0].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
