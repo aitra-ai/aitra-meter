@@ -20,20 +20,21 @@ import (
 	// Import providers to trigger their init() registration.
 	_ "github.com/aitra-ai/aitra-meter/internal/provider/energy/amd"
 	_ "github.com/aitra-ai/aitra-meter/internal/provider/energy/dcgm"
+	_ "github.com/aitra-ai/aitra-meter/internal/provider/energy/kepler"
 	_ "github.com/aitra-ai/aitra-meter/internal/provider/energy/zeus"
 	_ "github.com/aitra-ai/aitra-meter/internal/provider/inference/genericprometheus"
 	_ "github.com/aitra-ai/aitra-meter/internal/provider/inference/vllm"
 )
 
 func main() {
-	energyType := flag.String("energy-provider", "nvml", "Energy provider: nvml | amd | zeus | dcgm")
+	energyType := flag.String("energy-provider", "nvml", "Energy provider: nvml | amd | zeus | dcgm | kepler")
 	inferenceType := flag.String("inference-provider", "vllm", "Inference provider: vllm | generic-prometheus")
 	aggregatorAddr := flag.String("aggregator", "aitra-meter-aggregation:9091", "Aggregation service gRPC address")
 	nodeName := flag.String("node", "", "Kubernetes node name (defaults to NODE_NAME env var)")
 	windowSecs := flag.Int("window-seconds", 30, "Measurement window duration in seconds")
 	logLevel := flag.String("log-level", "info", "Log level: debug | info | warn | error")
 	inferenceEndpoint := flag.String("inference-endpoint", "", "Inference provider metrics URL (e.g. http://localhost:8000/metrics)")
-	energyEndpoint := flag.String("energy-endpoint", "", "Energy provider metrics URL (e.g. http://localhost:9400/metrics for dcgm)")
+	energyEndpoint := flag.String("energy-endpoint", "", "Energy provider endpoint URL for scrape-based providers (dcgm exporter /metrics URL, or the Prometheus base URL for kepler)")
 	perModel := flag.Bool("per-model", false, "Discover GPU pods on this node and report one window per model (requires a per-device energy provider such as dcgm)")
 	checkpointPath := flag.String("checkpoint-path", "", "kubelet device-plugin checkpoint path (per-model mode; defaults to "+agent.DefaultCheckpointPath+")")
 	kubeconfig := flag.String("kubeconfig", "", "Path to kubeconfig (per-model mode; defaults to in-cluster config)")

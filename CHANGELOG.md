@@ -12,6 +12,7 @@ Pre-release tags: `-alpha` tags are internal milestones. `-beta` tags are public
 ## [Unreleased]
 
 ### Added
+- **Kepler energy provider** — pure-Go `EnergyProvider` that reads `kepler_container_joules_total` from an existing Kepler deployment (via the Prometheus federation endpoint or a direct exporter URL); selectable via `-energy-provider kepler` / `energyProvider.type: kepler`, with a new `--energy-endpoint` agent flag and a [Kepler integration guide](docs/guides/kepler-integration.md). (#48)
 - **DCGM energy provider** — pure-Go `EnergyProvider` that scrapes a node-local dcgm-exporter Prometheus endpoint; selectable via `-energy-provider dcgm` / `energyProvider.type: dcgm`. (#59)
 - **Model-level AI efficiency metric family** — `aitra_model_tokens_total` and `aitra_model_energy_per_1m_tokens`, plus SiteConfig-driven cost/carbon derivation (`aitra_cost_per_million_tokens_usd`, `aitra_co2_per_token_grams`, `aitra_tenant_cost_usd_total`) and per-node serving/idle ratios (`aitra_gpu_serving_utilization_ratio`, `aitra_idle_time_ratio`). (#60)
 - **Cost-budget and TTFT alerts** — `TenantCostBudgetExceeded` and `TTFTRegression` reference alerts, a runbook per alert, and a Helm-driven per-namespace budget mechanism (`costBudgets`). (#61)
