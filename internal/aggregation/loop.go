@@ -82,9 +82,29 @@ func (l *Loop) ReportWindow(
 	w *measurementv1.WindowReport,
 ) (*measurementv1.WindowAck, error) {
 	// --- serving / idle tracking (every window, issue #40) -----------------
+	// Residual report from a per-model agent: the energy/power of GPUs not
+	// allocated to any pod — the node's true idle power while models serve.
+	// It must not influence the serving ratio (it is not a model window).
+	if w.ModelName == model.ResidualModelName {
+		if w.PowerWatts > 0 {
+			metrics.IdlePowerWatts.WithLabelValues(w.Node).Set(w.PowerWatts)
+			metrics.GPUPowerWatts.WithLabelValues(w.Node, "idle").Set(w.PowerWatts)
+			// Per-model agents split power across series; drop the whole-node
+			// series so per-node sums aren't double counted.
+			metrics.GPUPowerWatts.DeleteLabelValues(w.Node, "all")
+		}
+		return &measurementv1.WindowAck{Accepted: false}, nil
+	}
+
 	// Update the per-node serving ratio for both serving and idle windows so the
 	// serving-utilization and idle-time ratios reflect recent activity.
-	servingWindow := w.OutputTokens > 0
+	// A window needs a minimum number of tokens before J/token is meaningful;
+	// boundary windows (traffic just stopped/started, deep-queue overload)
+	// complete a handful of tokens against a hot GPU and read absurdly high.
+	// Below the floor the window is treated as quiet: efficiency reads zero,
+	// power stays truthful.
+	const minServingTokens = 30
+	servingWindow := w.OutputTokens >= minServingTokens
 	servingRatio := l.recordServing(w.Node, servingWindow)
 	metrics.GPUServingUtilizationRatio.WithLabelValues(w.Node).Set(servingRatio)
 	metrics.IdleTimeRatio.WithLabelValues(w.Node).Set(1 - servingRatio)
@@ -93,7 +113,44 @@ func (l *Loop) ReportWindow(
 	// J/token; the agent sends them so idle power/time stays visible.
 	if !servingWindow {
 		if w.PowerWatts > 0 {
-			metrics.IdlePowerWatts.WithLabelValues(w.Node).Set(w.PowerWatts)
+			if w.ModelName == "" {
+				// Whole node idle (single-endpoint agent, or per-model agent
+				// with no model pods): all GPU power is idle power. Clear any
+				// stale per-model series first, then populate the whole-node
+				// series so idle-only clusters still render a power graph.
+				metrics.ResetNodeGPUPower(w.Node)
+				metrics.IdlePowerWatts.WithLabelValues(w.Node).Set(w.PowerWatts)
+				metrics.GPUPowerWatts.WithLabelValues(w.Node, "all").Set(w.PowerWatts)
+			} else {
+				// A model pod with zero tokens this window (loading, or loaded
+				// but quiet): keep its power visible under its own series.
+				// Not idle power — the pod holds those GPUs.
+				metrics.GPUPowerWatts.WithLabelValues(w.Node, w.ModelName).Set(w.PowerWatts)
+				metrics.GPUPowerWatts.DeleteLabelValues(w.Node, "all")
+			}
+		}
+		// A quiet model's efficiency gauges read zero rather than freezing at
+		// the last serving window's value — dashboards must reflect the
+		// current state, and the boundary window when traffic stops is
+		// systematically inflated (hot GPU, few tokens). The next serving
+		// window restores real values. The power series above stays truthful.
+		if w.ModelName != "" {
+			attr := l.resolver.Resolve(ctx, w.Node, w.ModelName)
+			hw := l.hardware.Hardware(ctx, w.Node)
+			cal := l.calibration.Lookup(w.ModelName, hw)
+			metrics.JPerToken.WithLabelValues(
+				attr.Namespace, attr.Workload, w.ModelName, hw,
+				attr.Precision, string(cal.Tier), string(attr.Method),
+			).Set(0)
+			metrics.TokensPerJoule.WithLabelValues(
+				attr.Namespace, attr.Workload, w.ModelName, hw,
+			).Set(0)
+			metrics.GPUUtilizationEfficiency.WithLabelValues(
+				attr.Namespace, attr.Workload, w.ModelName, hw,
+			).Set(0)
+			metrics.ModelEnergyPer1MTokens.WithLabelValues(
+				attr.Namespace, w.ModelName, hw, attr.Workload,
+			).Set(0)
 		}
 		return &measurementv1.WindowAck{Accepted: false}, nil
 	}
@@ -172,7 +229,9 @@ func (l *Loop) ReportWindow(
 			Set(cal.RefJPerToken)
 	}
 
-	metrics.GPUPowerWatts.WithLabelValues(w.Node, "all").Set(w.PowerWatts)
+	// One power series per model; dashboards sum the node's series for totals.
+	metrics.GPUPowerWatts.WithLabelValues(w.Node, w.ModelName).Set(w.PowerWatts)
+	metrics.GPUPowerWatts.DeleteLabelValues(w.Node, "all")
 
 	// --- storage record -------------------------------------------------
 	ts := w.TimestampUnixMs

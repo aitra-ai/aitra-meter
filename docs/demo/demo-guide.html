@@ -1,0 +1,502 @@
+<title>Aitra Meter — Demo 部署指南</title>
+<style>
+  :root {
+    --bg: #FAFAF7;
+    --surface: #F1F0EA;
+    --ink: #1E2528;
+    --ink-soft: #5A6468;
+    --line: #DDDBD2;
+    --accent: #B97A10;
+    --accent-soft: #F3E4C8;
+    --tele: #24767A;
+    --ok: #3D8B5F;
+    --warn: #C24E42;
+    --code-bg: #ECEAE2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14181A; --surface: #1C2225; --ink: #E8E6E0; --ink-soft: #9AA4A8;
+      --line: #2E3639; --accent: #E8A020; --accent-soft: #3A2F18; --tele: #4FB3B8;
+      --ok: #5FBF8A; --warn: #E0705F; --code-bg: #20272A;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14181A; --surface: #1C2225; --ink: #E8E6E0; --ink-soft: #9AA4A8;
+    --line: #2E3639; --accent: #E8A020; --accent-soft: #3A2F18; --tele: #4FB3B8;
+    --ok: #5FBF8A; --warn: #E0705F; --code-bg: #20272A;
+  }
+  :root[data-theme="light"] {
+    --bg: #FAFAF7; --surface: #F1F0EA; --ink: #1E2528; --ink-soft: #5A6468;
+    --line: #DDDBD2; --accent: #B97A10; --accent-soft: #F3E4C8; --tele: #24767A;
+    --ok: #3D8B5F; --warn: #C24E42; --code-bg: #ECEAE2;
+  }
+
+  html { background: var(--bg); }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 16px/1.85 "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    margin: 0; padding: 0 20px 96px;
+  }
+  main { max-width: 920px; margin: 0 auto; }
+
+  header.masthead { padding: 56px 0 28px; border-bottom: 2px solid var(--ink); margin-bottom: 8px; }
+  .eyebrow {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--accent); font-weight: 600;
+  }
+  h1 {
+    font-size: clamp(28px, 5vw, 38px); line-height: 1.3; margin: 12px 0 14px;
+    font-weight: 700; text-wrap: balance;
+  }
+  .standfirst { color: var(--ink-soft); max-width: 40em; margin: 0; }
+  .meta-row {
+    display: flex; flex-wrap: wrap; gap: 10px 24px; margin-top: 22px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; color: var(--ink-soft);
+  }
+  .meta-row b { color: var(--ink); font-weight: 600; }
+
+  section { margin-top: 60px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; border-bottom: 1px solid var(--line); padding-bottom: 10px; margin-bottom: 20px; }
+  .sec-num {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    color: var(--accent); font-weight: 700; font-size: 15px;
+  }
+  h2 { font-size: 22px; margin: 0; font-weight: 700; }
+  h3 { font-size: 16.5px; margin: 30px 0 10px; font-weight: 700; }
+  p { max-width: 46em; }
+  .soft { color: var(--ink-soft); }
+
+  .bigidea {
+    background: var(--accent-soft); border-radius: 8px; padding: 16px 20px;
+    margin: 18px 0; font-size: 16.5px; max-width: 46em;
+  }
+  .bigidea b { color: var(--accent); }
+
+  .diagram-wrap {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 6px;
+    padding: 18px; overflow-x: auto; margin: 18px 0;
+  }
+  pre.mermaid { margin: 0; background: transparent; min-width: 620px; }
+
+  table {
+    border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 14px;
+    font-variant-numeric: tabular-nums;
+  }
+  th {
+    text-align: left; font-size: 12.5px; letter-spacing: 0.05em;
+    color: var(--ink-soft); font-weight: 600; padding: 8px 14px 8px 0;
+    border-bottom: 2px solid var(--ink);
+  }
+  td { padding: 10px 14px 10px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td.num { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; white-space: nowrap; }
+  tr.hl td { background: var(--accent-soft); }
+  .orig {
+    display: block; margin-top: 4px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11.5px; color: var(--ink-soft); font-weight: 400;
+  }
+  .table-wrap { overflow-x: auto; }
+
+  code {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.86em;
+    background: var(--code-bg); border-radius: 4px; padding: 1px 6px;
+  }
+  pre.block {
+    background: var(--code-bg); border: 1px solid var(--line); border-radius: 6px;
+    padding: 14px 16px; overflow-x: auto; font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 13px; line-height: 1.6;
+  }
+  pre.block code { background: none; padding: 0; }
+
+  .pill {
+    display: inline-block; font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 999px; vertical-align: 1px;
+  }
+  .pill.moe { background: var(--accent-soft); color: var(--accent); }
+  .pill.tele { color: var(--tele); border: 1px solid var(--tele); }
+
+  .callout {
+    border-left: 3px solid var(--accent); background: var(--surface);
+    padding: 14px 18px; margin: 20px 0; border-radius: 0 6px 6px 0;
+  }
+  .callout.red { border-left-color: var(--warn); }
+  .callout p { margin: 0; }
+  .callout p + p { margin-top: 8px; }
+
+  ul.tight, ol.tight { padding-left: 20px; }
+  ul.tight li, ol.tight li { margin: 8px 0; max-width: 46em; }
+  ul.tight li::marker { color: var(--accent); }
+  ol.tight li::marker { color: var(--accent); font-weight: 600; }
+
+  details {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 6px;
+    padding: 12px 18px; margin: 16px 0; max-width: 48em;
+  }
+  details summary {
+    cursor: pointer; font-weight: 600; font-size: 14px; color: var(--tele);
+    user-select: none;
+  }
+  details[open] summary { margin-bottom: 10px; }
+  details p, details li { font-size: 14.5px; }
+
+  .kv {
+    display: grid; grid-template-columns: minmax(160px, max-content) 1fr; gap: 8px 22px;
+    font-size: 14.5px; margin: 14px 0;
+  }
+  .kv dt { color: var(--ink-soft); margin: 0; font-weight: 600; }
+  .kv dd { margin: 0; }
+  @media (max-width: 560px) { .kv { grid-template-columns: 1fr; gap: 2px 0; } .kv dd { margin-bottom: 10px; } }
+
+  a { color: var(--tele); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  footer { margin-top: 80px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-soft); }
+</style>
+
+<main>
+<header class="masthead">
+  <div class="eyebrow">KubeCon Japan 2026 · Demo 环境速查手册 · v3</div>
+  <h1>Aitra Meter:给每个 AI 模型装一块"分户电表"</h1>
+  <p class="standfirst">一台 8 卡 GPU 服务器同时跑 8 个最新的 Qwen3.5/3.6 模型,Aitra Meter 实时算清每个模型"每生成一个字花了多少电";一个控制台让你现场随意改变流量,看板即时响应。本手册讲清:环境、原理、数据、控制台操作、看板解读。</p>
+  <div class="meta-row">
+    <span>算力 <b>GPU 服务器(10.100.18.25)· 8× A100-80G</b></span>
+    <span>机队 <b>Qwen3.5 / Qwen3.6 × 8</b></span>
+    <span>代码 <b>PR #91</b></span>
+  </div>
+</header>
+
+<!-- ======================================================= 1 -->
+<section>
+  <div class="sec-head"><span class="sec-num">1</span><h2>部署拓扑</h2></div>
+
+  <div class="bigidea">一句话:全部组件跑在<b>一台 8 卡 A100 服务器</b>的 Kubernetes 集群里;公网观看走三条 Cloudflare <b>出站</b>隧道,演示操控走内网控制台——看的人在公网,动手的人在内网,互不越界。</div>
+
+  <h3>1.1 集群与节点</h3>
+  <div class="table-wrap"><table>
+    <tr><th>节点</th><th>IP</th><th>角色</th><th>硬件</th></tr>
+    <tr><td><code>k8s-master</code></td><td class="num">10.100.18.24</td><td>控制面(API Server :6443),已 cordon 不调度业务</td><td>—</td></tr>
+    <tr><td><code>xspark</code></td><td class="num">10.100.18.25</td><td>唯一业务节点:模型、计量、存储、展示、控制台全在这台</td><td>8× A100-SXM4-80GB · 1.7TB NVMe</td></tr>
+  </table></div>
+  <p class="soft">Kubernetes v1.32,容器运行时 docker(cri-dockerd)。计量组件镜像本机构建、<code>imagePullPolicy: Never</code>;模型权重与数据集存于宿主机(<code>/root/aitra-models</code>、<code>/root/aitra-datasets</code>),hostPath 挂载、离线加载。</p>
+
+  <h3>1.2 组件清单(namespace: aitra-system)</h3>
+  <div class="table-wrap"><table>
+    <tr><th>组件</th><th>K8s 类型</th><th>端口</th><th>职责</th></tr>
+    <tr><td><code>vllm-q35-*</code> / <code>vllm-q36-*</code> ×8</td><td>Deployment + Service</td><td class="num">8000</td><td>8 个模型服务,各独占 1 张整卡(<code>nvidia.com/gpu: 1</code>)</td></tr>
+    <tr><td><code>dcgm-exporter</code></td><td>DaemonSet</td><td class="num">9400</td><td>每张 GPU 的累计能耗/功率计数器(按 UUID)</td></tr>
+    <tr><td><code>aitra-meter-agent</code></td><td>DaemonSet</td><td class="num">—</td><td>采集器:<code>--per-model</code>,每 30s 归因一轮</td></tr>
+    <tr><td><code>aitra-meter-aggregation</code></td><td>Deployment</td><td class="num">9091 gRPC / 8080</td><td>算账器:J/token、CV 门、静默归零、最小 token 门</td></tr>
+    <tr><td><code>aitra-meter-prometheus</code></td><td>Deployment</td><td class="num">9090 → 30990</td><td>指标存储,15s 抓取,保留 2 天</td></tr>
+    <tr><td><code>grafana</code></td><td>Deployment</td><td class="num">3000 → 30852</td><td>演示主面:匿名只读,Demo A/B/C 仪表盘</td></tr>
+    <tr><td><code>aitra-meter-dashboard</code></td><td>Deployment</td><td class="num">3000 → 30851</td><td>Meter 看板:明细表、电费分摊、碳排</td></tr>
+    <tr><td><code>aitra-meter-data-gateway</code></td><td>Deployment</td><td class="num">8080 → 30909</td><td>Bearer-token 鉴权的 Prometheus 代理(公网 Vercel 回源)</td></tr>
+    <tr class="hl"><td><code>demo-control</code></td><td>Deployment</td><td class="num">8080 → 30853</td><td><strong>演示流量控制台</strong>(仅内网,见第 4 节)</td></tr>
+    <tr><td><code>vllm-fleet-loadgen</code></td><td>Deployment</td><td class="num">—</td><td>底噪流量:8 端点各一条小流量循环(控制台可开关)</td></tr>
+  </table></div>
+
+  <div class="diagram-wrap">
+<pre class="mermaid">
+flowchart LR
+  subgraph PUB["公网(观看)"]
+    B1["浏览器 / 展会现场"]
+  end
+  subgraph LAN["内网(操控)"]
+    OP["演示者浏览器"]
+  end
+
+  subgraph TUN["cloudflared 出站隧道 ×3"]
+    T1["→ :30852"]
+    T2["→ :30851"]
+    T3["→ :30909(token)"]
+  end
+
+  subgraph XS["A100 GPU 服务器(.25)· ns: aitra-system"]
+    CTL["demo-control :30853<br/>流量控制台"]
+    F["vllm 机队 ×8<br/>:8000 · 一卡一模型"]
+    LG["fleet-loadgen<br/>底噪流量"]
+    JOBS["bench Jobs<br/>(控制台创建)"]
+    DCGM["dcgm-exporter :9400"]
+    AG["measurement-agent<br/>--per-model"]
+    AGG["aggregation-service"]
+    PROM["Prometheus · 30990"]
+    GRAF["Grafana · 30852"]
+    DASH["Meter 看板 · 30851"]
+  end
+
+  B1 --> T1 --> GRAF
+  B1 --> T2 --> DASH
+  T3 --> PROM
+  OP --> CTL
+  CTL -- "创建/停止 Job · 开关底噪" --> JOBS
+  CTL -.-> LG
+  JOBS -- "压测请求" --> F
+  LG -- "小流量" --> F
+  F -- "逐 pod /metrics" --> AG
+  DCGM -- "每卡累计焦耳" --> AG
+  AG -- "gRPC ×9/30s" --> AGG
+  AGG --> PROM
+  PROM --> GRAF
+  PROM --> DASH
+</pre>
+  </div>
+
+  <h3>1.3 入口速查(一域三面,固定域名)</h3>
+  <div class="table-wrap"><table>
+    <tr><th>面</th><th>公网(推荐,固定)</th><th>内网备用</th></tr>
+    <tr><td><strong>Grafana 演示主面</strong></td><td><a href="https://meter.aitra.ai">meter.aitra.ai</a>(匿名只读)</td><td class="num">10.100.18.25:30852</td></tr>
+    <tr><td><strong>Meter 看板</strong>(明细/电费/碳排)</td><td><a href="https://meter.aitra.ai/board">meter.aitra.ai/board</a></td><td class="num">10.100.18.25:30851/board</td></tr>
+    <tr><td><strong>演示控制台</strong></td><td><code>meter.aitra.ai/console?k=访问密钥</code></td><td class="num">10.100.18.25:30853/?k=密钥</td></tr>
+    <tr><td>Prometheus(调试)</td><td class="soft">不对公网暴露</td><td class="num">10.100.18.25:30990</td></tr>
+  </table></div>
+  <div class="callout">
+    <p><strong>公网链路:</strong><code>meter.aitra.ai</code>(Vercel 固定域名+TLS)按路径 rewrite 到实验室的三条 <strong>systemd 托管 cloudflared 隧道</strong>(开机自启、进程自愈)。旁路另有 Tailscale Funnel 固定域名(<code>xspark.tailcb46cf.ts.net</code>)待其 DNS 稳定后可切换为零维护终态。</p>
+    <p><strong>安全模型:</strong>隧道全部为出站连接,内网零入站端口;裸 Prometheus 与 K8s API 不对公网暴露;控制台有访问密钥门(Secret <code>demo-control-key</code>)。</p>
+    <p><strong>服务器重启后:</strong>一切自动恢复,唯隧道 URL 轮换——执行 <code>grep -o 'https://.*trycloudflare.com' /root/tunnel-*.log | tail -4</code> 取新地址,更新 meter-booth 项目的 vercel.json 重发一次(约 2 分钟)。</p>
+  </div>
+</section>
+
+<!-- ======================================================= 2 -->
+<section>
+  <div class="sec-head"><span class="sec-num">2</span><h2>软件怎么算账(架构与计量语义)</h2></div>
+
+  <div class="bigidea">类比:一栋楼一个总电表、住 8 户。Aitra Meter 给每户装分表、每 30 秒抄一次、给每户开账单——"户"是模型,"单价"是 <b>J/token(每生成一个字花多少焦耳)</b>。核心规则:<b>电按卡计,卡按持有 pod 分组,求和只在组内</b>。</div>
+
+  <h3>2.1 每 30 秒一轮的"抄表"(采集器)</h3>
+  <ol class="tight">
+    <li><strong>查住户名单</strong> — 读 kubelet 的 device-plugin checkpoint,得到"哪个 pod 占哪几张卡"(K8s 本来就记着,零配置;新模型上线自动入册、下线自动销户);</li>
+    <li><strong>抄电表</strong> — 从 dcgm-exporter 读每张卡的累计能耗计数器,本次减上次 = 这 30 秒该卡的耗电;</li>
+    <li><strong>数产量</strong> — 逐个 pod 抓它自己的 vLLM <code>/metrics</code>,token 计数器同样两次相减;</li>
+    <li><strong>记账</strong> — 每模型一条报告(能耗 = 恰好它持有的卡;TP 多卡自动求和),外加一条"无人持有的卡"的残余报告。8 模型即每窗口 9 条。</li>
+  </ol>
+
+  <h3>2.2 算账器的四条显示语义(最近两天新增的都在这)</h3>
+  <div class="table-wrap"><table>
+    <tr><th>情形</th><th>J/token 显示</th><th>理由</th></tr>
+    <tr><td>正常服务窗口(≥30 token)</td><td><strong>实测值</strong></td><td>分子分母都有统计意义</td></tr>
+    <tr class="hl"><td>窗口 token 不足 30(断流边界、深度排队)</td><td><strong>0</strong></td><td>几个 token 除出来的单价是噪声——热 GPU ÷ 极小分母会得到荒谬大的假数字,一律不展示</td></tr>
+    <tr class="hl"><td>模型占卡但零流量(空载)</td><td><strong>0</strong>(功率照实显示)</td><td>看板必须反映"现在",不冻结旧值;占卡的静息电费在功率面板如实可见</td></tr>
+    <tr><td>无人持有的卡</td><td>不进任何模型账单</td><td>单独记为 idle 残余,是"真待机"</td></tr>
+  </table></div>
+  <p class="soft">一句话口径:<strong>看板上的 J/token 要么是可信测量,要么是 0,没有中间态。</strong>配套的 CV 门(变异系数 &lt;3% 才算稳定)在旁边面板持续背书。</p>
+
+  <h3>2.3 J/token 怎么验算(现场可复现)</h3>
+  <p>时间约掉后 J/token ≈ <strong>功率 ÷ 吞吐</strong>。实测例(0.8B 高并发时):199.3 W ÷ 2294 tok/s = <strong>0.087 J/token</strong>,与看板 0.09 吻合。任何人任何时刻都可以用这两个原始数对账。</p>
+
+  <details><summary>工程细节:组件与降级行为</summary>
+    <ul class="tight">
+      <li>checkpoint 兼容 NUMA-map 与扁平两种布局;与 Running pod 求交集过滤已终止残留;</li>
+      <li>能耗计数器回绕钳制为零;抄表失败跳过本轮,下一轮跨越空窗,能耗不丢;</li>
+      <li>模型名解析:vLLM 指标 <code>model_name</code> 标签 → pod 标签(<code>aitra-ai.github.io/model-name</code>/<code>model</code>/<code>app</code>)→ pod 名;</li>
+      <li>端点不可达(加载中/非 vLLM)记零产量但能耗照记——占卡即付费;</li>
+      <li>多进程共享一张卡(MPS)硬件不可拆分 → 退化为按 token 比例分摊并打 <code>attribution_method: proportional</code> 标签;<strong>不测 prefill/decode 分相能耗</strong>(口径红线);</li>
+      <li>采集器 RBAC 最小化:pods/nodes 只读;<code>runAsUser: 0</code> 仅因 checkpoint 目录 root-only。</li>
+    </ul>
+  </details>
+</section>
+
+<!-- ======================================================= 3 -->
+<section>
+  <div class="sec-head"><span class="sec-num">3</span><h2>跑的是什么(模型、流量与两种状态)</h2></div>
+
+  <div class="bigidea">最重要的一条认知:<b>J/token 不是模型的固有属性,是"模型 × 负载"的联合属性</b>。所以下面给每个模型两个数:基线值(并发≈1,保守上界)与满载值(持续压测,生产下界)——差距就是批处理能挖的优化空间。</div>
+
+  <h3>3.1 八个模型 × 两种状态(全部实测)</h3>
+  <div class="table-wrap"><table>
+    <tr><th>GPU</th><th>模型(HF 仓库)</th><th>结构/精度</th><th>基线 J/token<br/>(并发≈1)</th><th>满载 J/token<br/>(持续压测)</th><th>降幅</th></tr>
+    <tr><td class="num">0</td><td>Qwen3.5-0.8B</td><td>稠密 bf16</td><td class="num">1.82</td><td class="num">0.09</td><td class="num">×20</td></tr>
+    <tr><td class="num">1</td><td>Qwen3.5-2B</td><td>稠密 bf16</td><td class="num">2.50</td><td class="num">0.11</td><td class="num">×23</td></tr>
+    <tr class="hl"><td class="num">2</td><td>Qwen3.6-35B-A3B-FP8 <span class="pill moe">MoE·激活3B</span></td><td>稀疏 fp8</td><td class="num">2.72</td><td class="num">0.46</td><td class="num">×6</td></tr>
+    <tr><td class="num">3</td><td>Qwen3.5-4B</td><td>稠密 bf16</td><td class="num">3.46</td><td class="num">0.28</td><td class="num">×12</td></tr>
+    <tr><td class="num">4</td><td>Qwen3.5-9B</td><td>稠密 bf16</td><td class="num">5.15</td><td class="num">0.54</td><td class="num">×10</td></tr>
+    <tr class="hl"><td class="num">5</td><td>Qwen3.5-122B-A10B-Int4 <span class="pill moe">MoE·激活10B</span></td><td>稀疏 int4</td><td class="num">7.49</td><td class="num">1.25</td><td class="num">×6</td></tr>
+    <tr><td class="num">6</td><td>Qwen3.6-27B-FP8</td><td>稠密 fp8</td><td class="num">8.48</td><td class="num">1.19</td><td class="num">×7</td></tr>
+    <tr><td class="num">7</td><td>Qwen3.6-27B</td><td>稠密 bf16</td><td class="num">13.63</td><td class="num">1.75</td><td class="num">×8</td></tr>
+  </table></div>
+  <p class="soft">换算锚点:1 J/token ≈ 生成 100 万 token 用 0.28 度电。基线态 27B 生成百万字约 3.8 度电(≈¥3);满载态只要 0.5 度(≈¥0.4)。</p>
+
+  <h3>3.2 四条现成的叙事线</h3>
+  <ul class="tight">
+    <li><strong>尺寸梯度</strong> — 0.8B→27B,基线单价涨 7.5 倍:越大越费电,现在有实测数字;</li>
+    <li><strong>量化 A/B</strong> — 同一个 Qwen3.6-27B,FP8 比 bf16 <strong>省 38%</strong>(13.63 vs 8.48),满载态同样保持优势;</li>
+    <li><strong>MoE 稀疏激活</strong> — 35B-A3B 的电费只相当于 2B 稠密档:<em>烧电的不是参数量,是激活量</em>;</li>
+    <li><strong>批处理红利与模型大小成反比</strong> — 小模型满载降 20 倍,27B 只降 8 倍:小模型单卡算力过剩,可摊的"闲置电"多。这条规律直接指向调度策略(小模型更该拼卡/合批)。</li>
+  </ul>
+
+  <h3>3.3 流量的三个来源</h3>
+  <div class="table-wrap"><table>
+    <tr><th>来源</th><th>内容</th><th>控制方式</th></tr>
+    <tr><td><strong>底噪流量</strong></td><td>6 条固定英文短问答(GPU 能效主题),每模型每 2 秒 1 条、输出 128 token——保证 tile 常亮的"心跳"</td><td>控制台一键开/关(关=空载演示)</td></tr>
+    <tr><td><strong>合成压测</strong></td><td>vLLM 官方压测器,随机 token 数据集,长度精确可控(三种形态见 §4)</td><td>控制台按维度组合触发</td></tr>
+    <tr><td><strong>真实对话</strong></td><td>ShareGPT V3 真人-AI 对话(94k 全量,现场用 1 万条子集秒级加载),长短参差、曲线带自然抖动</td><td>控制台"真实对话"形态</td></tr>
+  </table></div>
+</section>
+
+<!-- ======================================================= 4 -->
+<section>
+  <div class="sec-head"><span class="sec-num">4</span><h2>演示控制台(30853):你的驾驶舱</h2></div>
+
+  <div class="bigidea">整场演示<b>零命令行</b>:内网打开 <code>http://10.100.18.25:30853</code>,四步选择 + 一个按钮,流量即刻成形;Grafana 上曲线 30–60 秒内响应。</div>
+
+  <h3>4.1 操作维度(全部白名单,无自由输入)</h3>
+  <div class="table-wrap"><table>
+    <tr><th>维度</th><th>选项</th><th>说明</th></tr>
+    <tr><td>① 模型</td><td>8 个,<strong>可多选</strong></td><td>多选=同场景批量下发,天然的对比实验(如 27B vs 27B-FP8 同压)</td></tr>
+    <tr><td>② 任务形态</td><td>均衡对话(512/256)· 长文摘要(4096/64)· 长文生成(64/1024)· 真实对话(ShareGPT)</td><td>括号为输入/输出 token 数;形态本身就是能耗变量</td></tr>
+    <tr><td>③ 并发</td><td>1 / 4 / 8 / 16 / 32 / 64</td><td>同时在飞的请求数——批处理红利的调节旋钮</td></tr>
+    <tr><td>④ 时长</td><td>5 分钟 / 30 分钟 / <strong>持续</strong>(默认)</td><td>持续=循环发送直到手动停止,兜底上限 4 小时</td></tr>
+  </table></div>
+
+  <h3>4.2 预排场景与全局开关</h3>
+  <ul class="tight">
+    <li><strong>📈 并发扫描 1→32</strong>(约 12 分钟)— 对选中模型逐档爬升,Demo C 的下坡曲线一键复现;</li>
+    <li><strong>💓 脉冲 ×8</strong> — 满载 30 秒/静默 60 秒循环,曲线呈心跳状,最有观赏性;</li>
+    <li><strong>⏻ 底噪开关</strong> — 关闭进入全员空载(J/token 归零、功率显示静息值),再开恢复——一去一回就是完整的空载演示;</li>
+    <li><strong>■ 全部停止</strong> — 熔断:删掉所有演示任务,一分钟内回到底噪稳态。</li>
+  </ul>
+
+  <h3>4.3 一套可直接照做的演示剧本(约 15 分钟)</h3>
+  <ol class="tight">
+    <li><strong>稳态开场</strong> — Grafana Demo A:8 tile 各安其位,讲尺寸梯度与 MoE 反常识行;</li>
+    <li><strong>空载</strong> — 控制台关底噪:60 秒内全员归零、功率露出静息底座("不干活也在烧电,这就是 idle 成本");</li>
+    <li><strong>恢复 + 单点压测</strong> — 开底噪;选 0.8B,真实对话 × 并发64 × 持续:它的 J/token 从 1.8 俯冲到 0.09("同一张卡,单价差 20 倍");</li>
+    <li><strong>对比实验</strong> — 多选 27B + 27B-FP8,同场景同压:两条曲线并排,量化省电肉眼可见;</li>
+    <li><strong>心跳收尾</strong> — 全选 8 模型点脉冲,全场曲线同频起伏;讲完点"全部停止",一切归于平静。</li>
+  </ol>
+
+  <div class="callout red">
+    <p><strong>安全边界:</strong>控制台仅限内网、无登录鉴权,严禁开公网隧道。它的 K8s 权限被 RBAC 钉死:只能创建/删除本命名空间的压测 Job、只能伸缩 loadgen 这一个 Deployment;每个任务都有硬时限与自动清理;同一模型同时最多一个任务、全局最多 8 个。</p>
+  </div>
+</section>
+
+<!-- ======================================================= 5 -->
+<section>
+  <div class="sec-head"><span class="sec-num">5</span><h2>数字存在哪(Prometheus)</h2></div>
+
+  <div class="bigidea">Prometheus 是<b>数字仓库</b>:算账器每 15 秒被抓取一次,历史保留 2 天。看板上的一切都是从它查出来画的;会 PromQL 的人可以直接问仓库。</div>
+
+  <div class="table-wrap"><table>
+    <tr><th>指标</th><th>记的是什么</th></tr>
+    <tr><td><code>aitra_j_per_token</code></td><td><strong>头号账本</strong>:每模型当前单字电费(遵循 §2.2 的显示语义:可信值或 0)</td></tr>
+    <tr><td><code>aitra_gpu_power_watts</code></td><td>功率分解:每模型一条(<code>gpu_id</code> 承载模型名)+ <code>idle</code>;按 node 求和=整机</td></tr>
+    <tr><td><code>aitra_idle_power_watts</code></td><td>无人持有的卡的功率(真待机底座)</td></tr>
+    <tr><td><code>aitra_model_tokens_total</code></td><td>累计产字数;<code>rate()</code> 即吞吐</td></tr>
+    <tr><td><code>aitra_measurement_cv</code></td><td>数字晃动程度;&lt;3% 可信,配套 <code>aitra_measurement_window_stable</code></td></tr>
+    <tr><td><code>aitra_cost_per_million_tokens_usd</code> / <code>aitra_co2_per_token_grams</code></td><td>衍生:按 PUE、电价、电网碳强度换算成钱和碳</td></tr>
+  </table></div>
+
+  <details><summary>常用查询(集群内 30990,公网走带 token 的 gateway)</summary>
+<pre class="block"><code># 八块 tile 的原始数据
+aitra_j_per_token
+
+# 功率对账:干活 + 待机 ≈ 整机
+sum(aitra_gpu_power_watts{gpu_id!="idle"})
+sum(aitra_idle_power_watts)
+
+# 每模型吞吐
+sum by (model) (rate(aitra_model_tokens_total[2m]))
+
+# J/token 的现场验算(功率 ÷ 吞吐)
+aitra_gpu_power_watts{gpu_id="qwen3.5-0.8b"}
+  / on() sum(rate(aitra_model_tokens_total{model="qwen3.5-0.8b"}[2m]))
+
+# 不可信名单(正在晃的数字)
+aitra_measurement_cv &gt; 0.03</code></pre>
+  </details>
+</section>
+
+<!-- ======================================================= 6 -->
+<section>
+  <div class="sec-head"><span class="sec-num">6</span><h2>看板逐项解读</h2></div>
+
+  <div class="bigidea">总纲一句话:演示要证明的是<b>"八份互相独立、加起来对得上总电表、且只在可信时显示的账单"</b>。每个面板都是这句话的一个侧面。</div>
+
+  <h3>6.1 Grafana · Demo A「Heterogeneous Fleet」(默认首页)</h3>
+  <div class="table-wrap"><table>
+    <tr><th>面板</th><th>它显示什么</th><th>怎么判断正常</th></tr>
+    <tr><td><strong>八块数字牌</strong><span class="orig">J/token — &lt;模型名&gt; · aitra_j_per_token</span></td><td>每模型此刻的单字电费</td><td>各不相同、独立跳动;空载/断流时显示 <strong>0</strong>(正常语义,非故障)。⚠ 两块牌长期一模一样 = 账串了,停</td></tr>
+    <tr><td><strong>八条曲线图</strong><span class="orig">J/token by model · aitra_j_per_token</span></td><td>单字电费走势</td><td>平行分层互不纠缠;压测时整体下移,断流时落 0</td></tr>
+    <tr><td><strong>每秒产字数</strong><span class="orig">Output tokens/sec by model · rate(aitra_model_tokens_total[2m])</span></td><td>产出速度</td><td>底噪 ~50-110;压测时随并发翻数十倍;归零=断流</td></tr>
+    <tr><td><strong>功率堆叠图</strong><span class="orig">GPU power by model (stacked) + idle floor · aitra_gpu_power_watts</span></td><td>整机功率"切蛋糕":每模型一层 + idle 底座</td><td><strong>最重要的对账图</strong>:层高之和 ≈ 整机功率</td></tr>
+    <tr><td><strong>CV 稳定性</strong><span class="orig">Measurement CV by model · aitra_measurement_cv</span></td><td>数字可信度</td><td>稳态贴 3% 线下;换挡瞬间冒尖、两三窗回落</td></tr>
+    <tr><td><strong>四个汇总牌</strong><span class="orig">Cluster J/token · Total GPU power · Idle floor · Fleet tokens/sec</span></td><td>全队均价 / 整机功率(~2.7kW)/ 待机底座 / 总吞吐</td><td>均价落在 8 模型加权中间;待机在满占时小、缩容后大</td></tr>
+  </table></div>
+
+  <h3>6.2 Grafana · Demo B「Tensor-Parallel Scaling」(排练窗口跑,现场回放)</h3>
+  <div class="table-wrap"><table>
+    <tr><th>面板</th><th>怎么读</th></tr>
+    <tr><td><strong>当前单字电费</strong><span class="orig">J/token @ current TP degree</span></td><td>只含参与卡。⚠ TP=1 读到整机级 = 分组坏了</td></tr>
+    <tr><td><strong>干活/待机功率</strong><span class="orig">Participating-GPU power / Idle power</span></td><td>TP=1 时待机扛 7 张卡;TP=8 时待机趋零</td></tr>
+    <tr><td><strong>换挡曲线</strong><span class="orig">J/token over the TP sweep</span></td><td>1→2→4→8 逐档台阶,看"膝盖":并行有能耗代价</td></tr>
+    <tr><td><strong>功率转移堆叠</strong><span class="orig">Power split: serving vs idle</span></td><td>干活层变厚、待机层变薄,两层和恒≈整机</td></tr>
+  </table></div>
+
+  <h3>6.3 Grafana · Demo C「Workload Contrast」(控制台随时实跑)</h3>
+  <div class="table-wrap"><table>
+    <tr><th>面板</th><th>怎么读</th></tr>
+    <tr><td><strong>形态对比曲线</strong><span class="orig">J/token by workload shape</span></td><td>同模型三形态分层——"怎么用"影响电费。口径:聚合差异,非分相测量</td></tr>
+    <tr><td><strong>并发扫描曲线</strong><span class="orig">J/token during the concurrency sweep</span></td><td>单调下行后趋平(实测 2.4→0.07);档间小毛刺已被最小 token 门滤除</td></tr>
+    <tr><td><strong>吞吐 vs 功率</strong><span class="orig">Throughput vs power</span></td><td>两线张口 = 被摊薄的固定电费,解释上图为什么降</td></tr>
+  </table></div>
+
+  <h3>6.4 Meter 看板(30851)</h3>
+  <div class="table-wrap"><table>
+    <tr><th>区块</th><th>怎么读</th></tr>
+    <tr><td><strong>效率总表</strong><span class="orig">FLEET EFFICIENCY · aitra_j_per_token 等</span></td><td>Demo A 的表格版,适合截图导出</td></tr>
+    <tr><td><strong>电费分摊</strong><span class="orig">NAMESPACE CHARGEBACK</span></td><td>30 天按部门汇总度数与金额;PUE 滑杆与电价即时重算,可导 CSV</td></tr>
+    <tr><td><strong>空转监控</strong><span class="orig">IDLE CONSUMPTION</span></td><td>干活电 vs 白烧电的面积对比——集群电费利用率</td></tr>
+    <tr><td><strong>碳排与成本单价</strong><span class="orig">CARBON &amp; COST PER TOKEN</span></td><td>每字折钱、折 CO₂,推导公式印在数字下方,经得起追问</td></tr>
+  </table></div>
+
+  <h3>6.5 红灯清单(看到就停)</h3>
+  <div class="callout red">
+    <p><strong>两块数字牌长期一模一样</strong> → 归因泄漏,切录播排查。</p>
+    <p><strong>TP=1 读出整机级电费</strong> → 闲卡漏进分子,分组坏了。</p>
+    <p><strong>CV 长期 &gt; 3%</strong> → 数字不可引用,先查流量是否断续。</p>
+    <p><strong>产字归零但功率仍在</strong> → 服务活着没流量,查底噪开关/任务列表。</p>
+  </div>
+
+  <p class="soft">故障降级阶梯:远程全量 → 单模型整机 → 备用 GPU 服务器本地 → 录播。命令见 <code>docs/demo/kubecon-runbook.md</code>。</p>
+</section>
+
+<!-- ======================================================= 7 -->
+<section>
+  <div class="sec-head"><span class="sec-num">7</span><h2>FAQ — 开源大会观众问答备答</h2></div>
+  <p class="soft">按大会现场最可能被问到的顺序整理;每条答案控制在讲解者能背下来的长度,可直接用于 booth Q&amp;A。</p>
+
+  <h3>项目定位</h3>
+  <div class="table-wrap"><table>
+    <tr><th>问</th><th>答</th></tr>
+    <tr><td>Aitra Meter 是什么?解决什么问题?</td><td>一个开源的 <strong>AI 推理能耗计量器</strong>(Prometheus exporter 形态):在多模型共享 GPU 集群里,把每一焦耳精确记到具体模型头上,输出 <strong>J/token(每 token 焦耳)</strong>及派生的成本/碳排指标。解决的是"AI 电费只有一张总账单,没人知道哪个模型花的"这个盲区。</td></tr>
+    <tr><td>和 Kepler / DCGM-exporter / Scaphandre 有什么区别?</td><td>它们输出<strong>硬件或容器维度</strong>的功耗;Aitra Meter 在其上补了关键一层:<strong>按模型归因 + 与 token 产出对齐</strong>——分子(该模型持有的 GPU 的实测能耗)和分母(该模型自己产出的 token)都按模型隔离,得到推理领域真正可比的效率单位。事实上我们把 DCGM 当数据源,与 Kepler 的集成在路线图上(issue #48)。</td></tr>
+    <tr><td>为什么选 J/token 这个单位?</td><td>它是推理能效的"每公里油耗":跨模型、跨硬件、跨负载可比,直接乘电价/碳强度就是钱和碳。我们同时在推动 OTel GenAI 语义约定收录 <code>gen_ai.infrastructure.energy.*</code>(issue #38),希望它成为行业通用口径。</td></tr>
+    <tr><td>项目状态和许可?</td><td>Apache-2.0,仓库 <code>github.com/aitra-ai/aitra-meter</code>,当前 v0.8 线,Helm 一键部署。欢迎 issue/PR——展台演示跑的就是主干代码。</td></tr>
+  </table></div>
+
+  <h3>技术原理</h3>
+  <div class="table-wrap"><table>
+    <tr><th>问</th><th>答</th></tr>
+    <tr><td>能耗怎么归因到单个模型?</td><td>三步:①从 kubelet device-plugin checkpoint 读"哪个 pod 持有哪几张 GPU"(K8s 本来就记录,零配置);②从 DCGM 读每张 GPU 的<strong>硬件累计能耗计数器</strong>做窗口差分;③"卡按持有 pod 分组、求和只在组内"——单卡模型是精确测量,TP 多卡模型恰好求和参与卡,空闲卡单独记 idle,永不摊派。</td></tr>
+    <tr><td>需要改我的模型或推理代码吗?</td><td>零侵入。agent 自动发现持卡 pod、抓引擎自带的 /metrics(vLLM 的 token 计数器);模型上线自动出现、下线自动消失。展台上平台方部署的第三方模型就是被自动发现计量的。</td></tr>
+    <tr><td>精度如何?是测量还是估算?</td><td>整卡独占场景是<strong>测量</strong>(硬件计数器,非模型化估算):同一模型隔离运行 vs 8 模型共驻,J/token 偏差约 1%。每个数字配有 CV(变异系数)稳定门,&lt;3% 才标记可信;不足 30 token 的窗口一律不出数——<strong>非零即可信</strong>。</td></tr>
+    <tr><td>J/token 是模型的固定属性吗?</td><td>不是——它是<strong>模型 × 负载</strong>的联合属性。同一模型并发 1 和并发 64 能差 20 倍(批处理摊薄固定功耗)。所以我们总是带负载上下文给数字:基线值是容量规划上界,满载值是生产下界,差距就是优化空间。</td></tr>
+    <tr><td>测量开销多大?</td><td>接近零:纯 scrape 模式(读 DCGM 与引擎已有的 /metrics),无 eBPF、无插桩、无采样进程;agent 是每节点一个 &lt;100MB 的 Go 进程,CPU 毫核级。</td></tr>
+    <tr><td>支持哪些推理引擎和硬件?</td><td>引擎:vLLM 原生;SGLang/Triton/Ollama 适配在评审中(PR #69/#88),另有 generic-prometheus 适配器接任意暴露 token 计数的引擎。硬件:NVIDIA(DCGM/NVML)为主,AMD provider 已有;MIG 切片计量在 PR #71。</td></tr>
+    <tr><td>多卡张量并行怎么算?共享 GPU 呢?</td><td>TP=k 的 pod 持有 k 张卡 → 恰好这 k 张求和,TP=1 时其余 7 张卡的空转<strong>不会</strong>漏进分子(展台 Demo B 专门验证这点)。多进程挤同一张卡(MPS/分时)硬件计数器无法拆分——退化为按 token 比例分摊并打 <code>attribution_method: proportional</code> 标签,诚实降级而不是假装精确。</td></tr>
+    <tr><td>能区分 prefill 和 decode 的能耗吗?</td><td>不能,这是明确的 non-goal——硬件计数器没有相位概念,任何声称按相位拆分能耗的都是模型估算而非测量。我们展示的是"负载形态影响聚合 J/token"(读重/写重形态差异),口径严格。</td></tr>
+    <tr><td>只算 GPU 电吗?CPU/整机呢?</td><td>当前 J/token 是 GPU-only(推理能耗大头),文档明确标注。主机侧能耗(RAPL/机箱)在 PR #84,落地后会提供 GPU+host 的全口径指标。</td></tr>
+  </table></div>
+
+  <h3>落地与生态</h3>
+  <div class="table-wrap"><table>
+    <tr><th>问</th><th>答</th></tr>
+    <tr><td>部署需要什么?多快能跑起来?</td><td>任何有 NVIDIA device plugin 的 K8s 集群 + dcgm-exporter;Helm 一条命令装 agent(DaemonSet)+ 聚合服务 + Grafana 仪表盘。展台这套 8 模型环境从零到出数不到一天,单集群试用半小时内见到第一条 J/token。</td></tr>
+    <tr><td>怎么变成钱和碳?能接计费吗?</td><td>按站点参数(PUE、电价、电网碳强度)从 J/token 透明换算 —— 每个数字的推导公式直接印在看板上;自带 namespace 维度 30 天 chargeback 聚合与 CSV 导出,可直接喂内部分摊/账单系统。</td></tr>
+    <tr><td>数据能进我现有的监控栈吗?</td><td>天然可以:一切都是标准 Prometheus 指标(<code>aitra_*</code> 系列),Grafana/Alertmanager/Thanos 照常用;另有 OTLP 导出器把窗口数据推给 OpenTelemetry Collector。</td></tr>
+    <tr><td>展台看到的数据是真的吗?</td><td>全部实测实时:身后就是 8×A100 服务器,8 个 Qwen3.5/3.6 模型在跑,你现在扫码打开 meter.aitra.ai 看到的就是它们此刻的功耗——欢迎用控制台亲手改负载,看曲线 10 秒内响应。</td></tr>
+    <tr><td>路线图上有什么?</td><td>近期:SGLang/Triton/Ollama 引擎适配、MIG 切片计量、主机侧能耗、Kepler 集成;中期:OTel GenAI 能耗语义约定、llm-d/KAI 等调度生态的能效信号。欢迎在 issues 认领。</td></tr>
+  </table></div>
+</section>
+
+<footer>
+  Aitra Meter · KubeCon Japan demo 环境 · 2026-07-23 更新(v3:新增控制台章节、双状态数据表、显示语义)· 所有数字均为 A100 集群实测
+</footer>
+</main>

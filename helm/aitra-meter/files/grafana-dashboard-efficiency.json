@@ -1,0 +1,145 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.0.0" },
+    { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" }
+  ],
+  "title": "Aitra Meter — AI Efficiency",
+  "uid": "aitra-efficiency",
+  "description": "AI inference efficiency for infrastructure engineers: token throughput per watt, GPU serving utilisation, J/token, energy per 1M tokens, and vLLM latency percentiles. The TTFT/TPOT panels read vLLM metrics directly (passthrough) — Aitra Meter does not re-expose them.",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "30s",
+  "tags": ["aitra", "ai", "inference", "energy", "efficiency"],
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROMETHEUS",
+        "label": "Prometheus",
+        "type": "datasource",
+        "query": "prometheus",
+        "hide": 0
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Tokens/sec per GPU watt",
+      "description": "aitra_gpu_utilization_efficiency: output tokens per second per GPU watt. Bridges GPU utilisation and token throughput — higher is better.",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "datasource": "${DS_PROMETHEUS}",
+          "expr": "aitra_gpu_utilization_efficiency",
+          "legendFormat": "{{model}} ({{hardware}}) — {{namespace}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "id": 2,
+      "title": "GPU serving utilization",
+      "description": "Fraction of elapsed time each node was serving inference requests. Distinct from DCGM SM utilisation.",
+      "type": "gauge",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "datasource": "${DS_PROMETHEUS}",
+          "expr": "aitra_gpu_serving_utilization_ratio",
+          "legendFormat": "{{node}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0, "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0.5 },
+              { "color": "green", "value": 0.8 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "J/token by model",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "datasource": "${DS_PROMETHEUS}",
+          "expr": "aitra_j_per_token",
+          "legendFormat": "{{model}} ({{hardware}}) — {{namespace}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "joule" } }
+    },
+    {
+      "id": 4,
+      "title": "Energy per 1M tokens",
+      "description": "Joules per one million output tokens for the current measurement window, averaged per model x hardware.",
+      "type": "barchart",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "datasource": "${DS_PROMETHEUS}",
+          "expr": "avg by (model, hardware) (aitra_model_energy_per_1m_tokens)",
+          "legendFormat": "{{model}} ({{hardware}})",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "joule" } }
+    },
+    {
+      "id": 5,
+      "title": "TTFT P95 (vLLM passthrough)",
+      "description": "Time to first token, P95, read directly from vLLM's vllm:time_to_first_token_seconds histogram. Not an aitra_ metric — Aitra Meter does not duplicate it. Empty if the inference server is not vLLM or its metrics are not scraped.",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 16, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "datasource": "${DS_PROMETHEUS}",
+          "expr": "histogram_quantile(0.95, sum by (le, model_name) (rate(vllm:time_to_first_token_seconds_bucket[5m])))",
+          "legendFormat": "TTFT P95 — {{model_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 6,
+      "title": "TPOT P95 (vLLM passthrough)",
+      "description": "Time per output token, P95, read directly from vLLM's vllm:time_per_output_token_seconds histogram. Not an aitra_ metric — Aitra Meter does not duplicate it. Empty if the inference server is not vLLM or its metrics are not scraped.",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 16, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "datasource": "${DS_PROMETHEUS}",
+          "expr": "histogram_quantile(0.95, sum by (le, model_name) (rate(vllm:time_per_output_token_seconds_bucket[5m])))",
+          "legendFormat": "TPOT P95 — {{model_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    }
+  ]
+}

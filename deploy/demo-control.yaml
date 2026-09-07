@@ -1,0 +1,712 @@
+# Demo traffic control panel — web UI to trigger predefined load scenarios
+# against the fleet, KubeCon booth edition. Bilingual (zh/EN).
+#
+# Security model (the sol.aitra.ai brief, demo-scaled):
+#   - access key required when ACCESS_KEY is set (Secret demo-control-key):
+#     share the link as https://<tunnel>/?k=<key>; cookie persists it.
+#     Without the key: a login page and 401s. LAN without the Secret = open.
+#   - whitelisted dimensions only: 8 models × 4 task shapes × 6 concurrency
+#     steps × 3 durations + 2 orchestrated scenes; nothing free-form
+#   - every job carries activeDeadlineSeconds (hard cap) + TTL cleanup
+#   - one job per model, 8 jobs globally, enforced server-side
+#   - kill switch deletes everything with one click
+#   - baseline-loadgen toggle may scale exactly ONE deployment (RBAC
+#     resourceNames)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: demo-control
+  namespace: aitra-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: demo-control
+  namespace: aitra-system
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["vllm-fleet-loadgen"]
+    verbs: ["get"]
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale"]
+    resourceNames: ["vllm-fleet-loadgen"]
+    verbs: ["get", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: demo-control
+  namespace: aitra-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: demo-control
+subjects:
+  - kind: ServiceAccount
+    name: demo-control
+    namespace: aitra-system
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: demo-control-app
+  namespace: aitra-system
+data:
+  app.py: |
+    #!/usr/bin/env python3
+    """Demo traffic control panel. Stdlib only. Whitelisted dimensions only."""
+    import json, os, ssl, time, urllib.request, urllib.parse, urllib.error
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+
+    NS = "aitra-system"
+    K8S = "https://kubernetes.default.svc"
+    SA = "/var/run/secrets/kubernetes.io/serviceaccount"
+    PROM = os.environ.get("PROM_URL", "http://aitra-meter-prometheus:9090")
+    VLLM_IMAGE = os.environ.get("VLLM_IMAGE", "vllm/vllm-openai:v0.19.0")
+    ACCESS_KEY = os.environ.get("ACCESS_KEY", "")
+    MAX_JOBS = 8
+    LOADGEN = "vllm-fleet-loadgen"
+
+    with open(SA + "/token") as f:
+        TOKEN = f.read().strip()
+    SSLCTX = ssl.create_default_context(cafile=SA + "/ca.crt")
+
+    # -------- whitelists --------
+    MODELS = {
+        "qwen3.5-0.8b":            ("vllm-q35-0p8b",     "q35-0p8b"),
+        "qwen3.5-2b":              ("vllm-q35-2b",       "q35-2b"),
+        "qwen3.5-4b":              ("vllm-q35-4b",       "q35-4b"),
+        "qwen3.5-9b":              ("vllm-q35-9b",       "q35-9b"),
+        "qwen3.6-27b":             ("vllm-q36-27b",      "q36-27b"),
+        "qwen3.6-27b-fp8":         ("vllm-q36-27b-fp8",  "q36-27b-fp8"),
+        "qwen3.6-35b-a3b-fp8":     ("vllm-q36-35b-fp8",  "q36-35b-fp8"),
+        "qwen3.5-122b-a10b-int4":  ("vllm-q35-122b-int4","q35-122b-int4"),
+    }
+
+    BASE = ("vllm bench serve --backend openai --base-url http://%(svc)s:8000 "
+            "--endpoint /v1/completions --model %(model)s --tokenizer /models/%(dir)s ")
+
+    SHAPES = {
+        "balanced":  {"zh": "均衡对话", "en": "Balanced chat",
+                      "args": "--dataset-name random --random-input-len 512 --random-output-len 256 "},
+        "summarize": {"zh": "长文摘要", "en": "Long-doc summarize",
+                      "args": "--dataset-name random --random-input-len 4096 --random-output-len 64 "},
+        "generate":  {"zh": "长文生成", "en": "Long-form generate",
+                      "args": "--dataset-name random --random-input-len 64 --random-output-len 1024 "},
+        "sharegpt":  {"zh": "真实对话", "en": "Real conversations",
+                      "args": "--dataset-name sharegpt --dataset-path /datasets/sharegpt_10k.json "},
+    }
+    CONCURRENCY = [1, 4, 8, 16, 32, 64]
+    DURATIONS = {
+        "5m":      {"zh": "5 分钟",  "en": "5 min",  "secs": 300},
+        "30m":     {"zh": "30 分钟", "en": "30 min", "secs": 1800},
+        "forever": {"zh": "持续(手动停止,上限 4 小时)", "en": "Continuous (stop manually, 4 h cap)", "secs": 14400},
+    }
+    # Sweep prompt volume scales with output length so every shape finishes
+    # inside the deadline (generate emits 4x the tokens of balanced).
+    SWEEP_FACTOR = {"balanced": 30, "summarize": 40, "generate": 8, "sharegpt": 30}
+    SCENES = {
+        "sweep": {"zh": "并发扫描 1→32(约 12 分钟)", "en": "Concurrency sweep 1→32 (~12 min)", "deadline": 2400,
+                  "script": "for C in 1 2 4 8 16 32; do %(bench)s--max-concurrency $C --num-prompts $((C*%(factor)s)); sleep 45; done"},
+        "burst": {"zh": "脉冲流量 ×8(满载 30s/静默 60s)", "en": "Burst ×8 (30 s load / 60 s quiet)", "deadline": 1400,
+                  "script": "for i in 1 2 3 4 5 6 7 8; do %(bench)s--max-concurrency 32 --num-prompts 120; sleep 60; done"},
+    }
+
+    # -------- k8s helpers --------
+    def k8s(method, path, body=None, ctype="application/json"):
+        req = urllib.request.Request(K8S + path, method=method)
+        req.add_header("Authorization", "Bearer " + TOKEN)
+        req.add_header("Content-Type", ctype)
+        data = json.dumps(body).encode() if body is not None else None
+        with urllib.request.urlopen(req, data=data, context=SSLCTX, timeout=15) as r:
+            return json.loads(r.read())
+
+    def list_jobs():
+        out = []
+        res = k8s("GET", f"/apis/batch/v1/namespaces/{NS}/jobs?labelSelector=app=demo-load")
+        for j in res.get("items", []):
+            st = j.get("status", {})
+            state = "running"
+            for c in st.get("conditions", []) or []:
+                if c.get("type") == "Complete" and c.get("status") == "True":
+                    state = "done"
+                if c.get("type") == "Failed" and c.get("status") == "True":
+                    state = "failed"
+            if state == "running" and not st.get("active"):
+                state = "pending"
+            ann = j["metadata"].get("annotations") or {}
+            out.append({
+                "name": j["metadata"]["name"],
+                "model": j["metadata"]["labels"].get("demo-model", "?"),
+                "desc": ann.get("demo-desc", "?"),
+                "state": state,
+            })
+        return out
+
+    def make_job(name, model, desc, script, deadline):
+        job = {
+            "apiVersion": "batch/v1", "kind": "Job",
+            "metadata": {"name": name, "namespace": NS,
+                         "labels": {"app": "demo-load", "demo-model": model},
+                         "annotations": {"demo-desc": desc}},
+            "spec": {
+                "activeDeadlineSeconds": deadline,
+                "ttlSecondsAfterFinished": 900,
+                "backoffLimit": 0,
+                "template": {
+                    "metadata": {"labels": {"app": "demo-load"}},
+                    "spec": {
+                        "restartPolicy": "Never",
+                        "nodeSelector": {"kubernetes.io/hostname": "xspark"},
+                        "containers": [{
+                            "name": "bench",
+                            "image": VLLM_IMAGE,
+                            "imagePullPolicy": "Never",
+                            "command": ["/bin/bash", "-c", script],
+                            "env": [{"name": "HF_HUB_OFFLINE", "value": "1"}],
+                            "volumeMounts": [{"name": "models", "mountPath": "/models", "readOnly": True},
+                                              {"name": "datasets", "mountPath": "/datasets", "readOnly": True}],
+                            "resources": {"requests": {"cpu": "500m", "memory": "1Gi"},
+                                           "limits": {"cpu": "4", "memory": "8Gi"}},
+                        }],
+                        "volumes": [{"name": "models",
+                                     "hostPath": {"path": "/root/aitra-models", "type": "Directory"}},
+                                    {"name": "datasets",
+                                     "hostPath": {"path": "/root/aitra-datasets", "type": "Directory"}}],
+                    },
+                },
+            },
+        }
+        k8s("POST", f"/apis/batch/v1/namespaces/{NS}/jobs", job)
+
+    def guard(model):
+        active = [j for j in list_jobs() if j["state"] in ("running", "pending")]
+        if len(active) >= MAX_JOBS:
+            return f"busy: {len(active)}/{MAX_JOBS} jobs running · 任务已满,请先停止"
+        if any(j["model"] == model for j in active):
+            return "already running · 该模型已有任务"
+        return None
+
+    def start_custom(model, shape, conc, duration):
+        if (model not in MODELS or shape not in SHAPES
+                or conc not in CONCURRENCY or duration not in DURATIONS):
+            return None, "invalid parameters · 非法参数"
+        err = guard(model)
+        if err:
+            return None, err
+        svc, mdir = MODELS[model]
+        bench = (BASE + SHAPES[shape]["args"]) % {"svc": svc, "model": model, "dir": mdir}
+        d = DURATIONS[duration]
+        if duration == "forever":
+            script = (f"while true; do {bench}--max-concurrency {conc} "
+                      f"--num-prompts {conc*80}; done")
+            deadline = d["secs"]
+        else:
+            script = (f"end=$((SECONDS+{d['secs']})); while [ $SECONDS -lt $end ]; do "
+                      f"{bench}--max-concurrency {conc} --num-prompts {conc*80}; done")
+            deadline = d["secs"] + 240
+        desc = f"{shape} · c{conc} · {duration}"
+        name = f"demo-c{conc}-{shape}-{mdir}-{int(time.time())%100000}".lower().replace(".", "-")
+        make_job(name, model, desc, script, deadline)
+        return name, None
+
+    def start_scene(model, shape, scene):
+        if model not in MODELS or shape not in SHAPES or scene not in SCENES:
+            return None, "invalid parameters · 非法参数"
+        err = guard(model)
+        if err:
+            return None, err
+        svc, mdir = MODELS[model]
+        bench = (BASE + SHAPES[shape]["args"]) % {"svc": svc, "model": model, "dir": mdir}
+        sc = SCENES[scene]
+        script = sc["script"] % {"bench": bench, "factor": SWEEP_FACTOR.get(shape, 30)}
+        desc = f"{scene} · {shape}"
+        name = f"demo-{scene}-{mdir}-{int(time.time())%100000}".lower().replace(".", "-")
+        make_job(name, model, desc, script, sc["deadline"])
+        return name, None
+
+    def stop_all():
+        n = 0
+        for j in list_jobs():
+            try:
+                k8s("DELETE", f"/apis/batch/v1/namespaces/{NS}/jobs/{j['name']}?propagationPolicy=Background")
+                n += 1
+            except urllib.error.HTTPError:
+                pass
+        return n
+
+    def loadgen_replicas():
+        try:
+            d = k8s("GET", f"/apis/apps/v1/namespaces/{NS}/deployments/{LOADGEN}")
+            return d.get("spec", {}).get("replicas", 0)
+        except Exception:
+            return -1
+
+    def loadgen_set(on):
+        body = {"spec": {"replicas": 1 if on else 0}}
+        k8s("PATCH", f"/apis/apps/v1/namespaces/{NS}/deployments/{LOADGEN}/scale",
+            body, ctype="application/merge-patch+json")
+
+    def prom_query(q):
+        url = PROM + "/api/v1/query?query=" + urllib.parse.quote(q)
+        with urllib.request.urlopen(url, timeout=6) as r:
+            return json.loads(r.read())["data"]["result"]
+
+    def prom_jpt():
+        try:
+            return {x["metric"].get("model", "?"): round(float(x["value"][1]), 2)
+                    for x in prom_query("aitra_j_per_token")}
+        except Exception:
+            return {}
+
+    def prom_power():
+        try:
+            serving = float(prom_query('sum(aitra_gpu_power_watts{gpu_id!="idle"})')[0]["value"][1])
+            idle = float(prom_query("sum(aitra_idle_power_watts)")[0]["value"][1])
+            return {"serving": round(serving), "idle": round(idle)}
+        except Exception:
+            return {}
+
+    # -------- http --------
+    with open("/app/index.html", "rb") as f:
+        INDEX = f.read()
+
+    LOGIN = ("""<!doctype html><html><head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1"><title>Aitra Demo Control</title>
+    <style>body{background:#14181A;color:#E8E6E0;font:16px system-ui;display:flex;align-items:center;
+    justify-content:center;height:100vh;margin:0}form{text-align:center}
+    input{padding:10px 14px;font-size:15px;border-radius:6px;border:1px solid #2E3639;
+    background:#1C2225;color:#E8E6E0;width:240px}
+    button{padding:10px 22px;margin-left:8px;border-radius:6px;border:0;background:#E8A020;
+    font-weight:700;cursor:pointer}</style></head><body>
+    <form method="get" action=""><div style="font-size:22px;margin-bottom:6px">⚡ Aitra Demo Control</div>
+    <div style="color:#9AA4A8;margin-bottom:18px">Access key required · 需要访问密钥</div>
+    <input name="k" placeholder="access key / 访问密钥" autofocus>
+    <button>Enter</button></form></body></html>""").encode()
+
+    def cookie_key(handler):
+        c = handler.headers.get("Cookie", "") or ""
+        for part in c.split(";"):
+            k, _, v = part.strip().partition("=")
+            if k == "dk":
+                return v
+        return ""
+
+    def authed(handler):
+        if not ACCESS_KEY:
+            return True
+        if handler.headers.get("X-Demo-Key", "") == ACCESS_KEY:
+            return True
+        return cookie_key(handler) == ACCESS_KEY
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+        def _json(self, obj, code=200):
+            b = json.dumps(obj, ensure_ascii=False).encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(b)))
+            self.end_headers()
+            self.wfile.write(b)
+        def _page(self, body, code=200, extra_headers=None):
+            self.send_response(code)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            for k, v in (extra_headers or []):
+                self.send_header(k, v)
+            self.end_headers()
+            self.wfile.write(body)
+        def do_GET(self):
+            parsed = urllib.parse.urlparse(self.path)
+            if parsed.path in ("", "/") or parsed.path.startswith("/index"):
+                qs = urllib.parse.parse_qs(parsed.query)
+                key = (qs.get("k") or [""])[0]
+                if ACCESS_KEY and key == ACCESS_KEY:
+                    self._page(INDEX, extra_headers=[
+                        ("Set-Cookie", f"dk={ACCESS_KEY}; Path=/; Max-Age=604800; SameSite=Lax")])
+                    return
+                if authed(self):
+                    self._page(INDEX)
+                else:
+                    self._page(LOGIN, 401)
+            elif parsed.path == "/api/status":
+                if not authed(self):
+                    self._json({"error": "unauthorized"}, 401)
+                    return
+                self._json({"jobs": list_jobs(), "jpt": prom_jpt(), "power": prom_power(),
+                            "loadgen": loadgen_replicas(),
+                            "models": list(MODELS),
+                            "shapes": {k: {"zh": v["zh"], "en": v["en"]} for k, v in SHAPES.items()},
+                            "concurrency": CONCURRENCY,
+                            "durations": {k: {"zh": v["zh"], "en": v["en"]} for k, v in DURATIONS.items()},
+                            "scenes": {k: {"zh": v["zh"], "en": v["en"]} for k, v in SCENES.items()}})
+            else:
+                self._json({"error": "not found"}, 404)
+        def do_POST(self):
+            if not authed(self):
+                self._json({"error": "unauthorized"}, 401)
+                return
+            ln = int(self.headers.get("Content-Length", 0) or 0)
+            try:
+                body = json.loads(self.rfile.read(ln) or b"{}")
+            except Exception:
+                body = {}
+            if self.path == "/api/start":
+                models = body.get("models")
+                if not isinstance(models, list) or not models:
+                    models = [body.get("model", "")]
+                started, errors = [], []
+                for m in models[:8]:
+                    m = str(m)
+                    if body.get("scene"):
+                        name, err = start_scene(m, str(body.get("shape", "balanced")),
+                                                str(body.get("scene")))
+                    else:
+                        try:
+                            conc = int(body.get("concurrency", 0))
+                        except Exception:
+                            conc = 0
+                        name, err = start_custom(m, str(body.get("shape", "")), conc,
+                                                 str(body.get("duration", "forever")))
+                    if err:
+                        errors.append(f"{m}: {err}")
+                    else:
+                        started.append(name)
+                resp = {"started": started}
+                if errors:
+                    resp["errors"] = errors
+                self._json(resp, 200 if started else 400)
+            elif self.path == "/api/stop":
+                self._json({"stopped": stop_all()})
+            elif self.path == "/api/loadgen":
+                try:
+                    loadgen_set(bool(body.get("on")))
+                    self._json({"loadgen": loadgen_replicas()})
+                except Exception as e:
+                    self._json({"error": str(e)}, 500)
+            else:
+                self._json({"error": "not found"}, 404)
+
+    print("demo-control listening on :8080", flush=True)
+    HTTPServer(("0.0.0.0", 8080), H).serve_forever()
+  index.html: |
+    <!doctype html><html lang="zh"><head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Aitra Meter · Demo Control</title>
+    <style>
+      :root{--bg:#14181A;--surface:#1C2225;--ink:#E8E6E0;--soft:#9AA4A8;--line:#2E3639;
+            --accent:#E8A020;--accent-soft:#3A2F18;--tele:#4FB3B8;--warn:#E0705F;--ok:#5FBF8A}
+      *{box-sizing:border-box}
+      body{margin:0;background:var(--bg);color:var(--ink);
+           font:15px/1.7 "PingFang SC","Microsoft YaHei",system-ui,sans-serif;padding:28px 20px 60px}
+      main{max-width:780px;margin:0 auto}
+      .top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+      h1{font-size:22px;margin:0 0 4px}
+      .sub{color:var(--soft);font-size:13px;margin-bottom:22px}
+      #lang{border:1px solid var(--line);background:transparent;color:var(--soft);
+            border-radius:6px;padding:6px 12px;font-size:13px;cursor:pointer;flex-shrink:0}
+      .card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px 20px;margin:12px 0}
+      .lbl{font-size:12px;letter-spacing:.1em;color:var(--accent);font-weight:600;margin-bottom:10px}
+      .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+      .grid.narrow{grid-template-columns:repeat(auto-fill,minmax(72px,1fr))}
+      .opt{border:1px solid var(--line);border-radius:6px;padding:8px 10px;cursor:pointer;
+           font-family:ui-monospace,Menlo,monospace;font-size:12.5px;text-align:center;user-select:none}
+      .opt.sel{border-color:var(--accent);background:var(--accent-soft);color:var(--accent);font-weight:700}
+      .opt small{display:block;font-family:inherit;color:var(--soft);font-size:10.5px}
+      .row{display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;align-items:center}
+      button{border:0;border-radius:6px;padding:11px 24px;font-size:15px;font-weight:700;cursor:pointer}
+      #go{background:var(--accent);color:#14181A}
+      #stop{background:transparent;color:var(--warn);border:1px solid var(--warn)}
+      .scenebtn{background:transparent;color:var(--tele);border:1px solid var(--tele);font-size:13px;padding:9px 16px}
+      #lg{background:transparent;border:1px solid var(--soft);color:var(--ink);font-size:13px;padding:9px 16px}
+      #lg.off{border-color:var(--warn);color:var(--warn)}
+      #msg{font-size:13.5px;margin-top:10px;min-height:20px}
+      #msg.err{color:var(--warn)} #msg.ok{color:var(--ok)}
+      table{border-collapse:collapse;width:100%;font-size:13px;font-variant-numeric:tabular-nums}
+      th{color:var(--soft);text-align:left;font-weight:600;font-size:11.5px;letter-spacing:.08em;
+         padding:6px 10px 6px 0;border-bottom:1px solid var(--line)}
+      td{padding:7px 10px 7px 0;border-bottom:1px solid var(--line);
+         font-family:ui-monospace,Menlo,monospace;font-size:12.5px}
+      .st-running{color:var(--ok)} .st-pending{color:var(--accent)} .st-done{color:var(--soft)} .st-failed{color:var(--warn)}
+      .stats{display:flex;gap:26px;flex-wrap:wrap;font-family:ui-monospace,Menlo,monospace;font-size:13px}
+      .stats b{font-size:19px;color:var(--accent)}
+      a{color:var(--tele)}
+    </style></head><body><main>
+      <div class="top"><div>
+        <h1>⚡ <span data-i18n="title"></span></h1>
+        <div class="sub"><span data-i18n="sub"></span>
+          <a id="glink" href="#" target="_blank" data-i18n="grafana"></a>.</div>
+      </div><button id="lang">EN</button></div>
+
+      <div class="card"><div class="lbl" data-i18n="s1"></div><div class="grid" id="models"></div></div>
+      <div class="card"><div class="lbl" data-i18n="s2"></div><div class="grid" id="shapes"></div></div>
+      <div class="card"><div class="lbl" data-i18n="s3"></div><div class="grid narrow" id="conc"></div></div>
+      <div class="card"><div class="lbl" data-i18n="s4"></div><div class="grid" id="durs"></div></div>
+
+      <div class="row">
+        <button id="go" data-i18n="go"></button>
+        <button class="scenebtn" data-scene="sweep">📈 <span data-i18n="sweep"></span></button>
+        <button class="scenebtn" data-scene="burst">💓 <span data-i18n="burst"></span></button>
+        <button id="stop" data-i18n="stop"></button>
+      </div>
+      <div id="msg"></div>
+
+      <div class="card"><div class="lbl" data-i18n="idleTitle"></div>
+        <div class="row" style="margin-top:4px">
+          <button id="lg">…</button>
+          <span style="font-size:13px;color:var(--soft)" data-i18n="idleDesc"></span>
+        </div>
+      </div>
+
+      <div class="card"><div class="lbl" data-i18n="statusTitle"></div>
+        <div class="stats" id="stats"></div>
+        <table style="margin-top:12px"><thead><tr><th data-i18n="thJob"></th><th data-i18n="thModel"></th><th data-i18n="thDesc"></th><th data-i18n="thState"></th></tr></thead>
+        <tbody id="jobs"><tr><td colspan="4" style="color:var(--soft)">…</td></tr></tbody></table>
+      </div>
+
+      <div class="card"><div class="lbl" data-i18n="jptTitle"></div>
+        <table><thead><tr><th data-i18n="thModel"></th><th>J/token</th></tr></thead>
+        <tbody id="jpt"></tbody></table>
+      </div>
+    <script>
+      const I18N = {
+        zh: {
+          title:'演示流量控制台', sub:'模型 × 任务形态 × 并发 × 时长,自由组合;或用预排场景。曲线看 ',
+          grafana:'Grafana Demo 仪表盘',
+          s1:'① 模型(可多选——同场景打到多个模型做对比)', s2:'② 任务形态',
+          s3:'③ 并发(同时在飞的请求数)', s4:'④ 时长',
+          go:'▶ 启动组合', sweep:'并发扫描 1→32', burst:'脉冲 ×8', stop:'■ 全部停止',
+          idleTitle:'空载控制(常驻底噪流量)',
+          idleDesc:'关闭后约 1 分钟:所有模型吞吐归零、J/token 归零、功率显示占卡静息值——空载演示入口。',
+          statusTitle:'当前状态', jptTitle:'实时 J/token(30 秒窗口)',
+          thJob:'任务', thModel:'模型', thDesc:'内容', thState:'状态',
+          servingW:'干活功率', idleW:'待机功率', baseline:'底噪流量', on:'开', off:'关',
+          lgOn:'⏻ 关闭底噪(进入空载)', lgOff:'⏻ 打开底噪(恢复常态)',
+          pickModel:'请先选择至少一个模型(可多选)', starting:'启动中…',
+          started:n=>`✓ 已启动 ${n} 个任务`, stopped:n=>`■ 已停止 ${n} 个任务`,
+          noJobs:'当前没有演示任务', lgClosing:'正在关闭底噪…', lgOpening:'正在恢复底噪…',
+          lgClosed:'✓ 底噪已关——约 1 分钟后进入空载形态', lgOpened:'✓ 底噪已恢复',
+          shapeDesc:{balanced:'输入512/输出256', summarize:'输入4096/输出64(重读)',
+                     generate:'输入64/输出1024(重写)', sharegpt:'ShareGPT 真人对话'},
+        },
+        en: {
+          title:'Demo Traffic Console', sub:'Combine model × shape × concurrency × duration, or use a scene. Watch curves on the ',
+          grafana:'Grafana demo dashboards',
+          s1:'① Models (multi-select — same scenario across models for comparison)', s2:'② Task shape',
+          s3:'③ Concurrency (requests in flight)', s4:'④ Duration',
+          go:'▶ Start', sweep:'Sweep 1→32', burst:'Burst ×8', stop:'■ Stop all',
+          idleTitle:'Idle control (baseline traffic)',
+          idleDesc:'Turn off and within ~1 min every model reads zero throughput and zero J/token while power shows the true resting draw — the idle-state demo.',
+          statusTitle:'Current state', jptTitle:'Live J/token (30 s windows)',
+          thJob:'Job', thModel:'Model', thDesc:'What', thState:'State',
+          servingW:'Serving power', idleW:'Idle power', baseline:'Baseline traffic', on:'on', off:'off',
+          lgOn:'⏻ Turn baseline off (go idle)', lgOff:'⏻ Turn baseline on (resume)',
+          pickModel:'Select at least one model first', starting:'Starting…',
+          started:n=>`✓ Started ${n} job(s)`, stopped:n=>`■ Stopped ${n} job(s)`,
+          noJobs:'No demo jobs running', lgClosing:'Turning baseline off…', lgOpening:'Turning baseline on…',
+          lgClosed:'✓ Baseline off — idle state in ~1 min', lgOpened:'✓ Baseline restored',
+          shapeDesc:{balanced:'in 512 / out 256', summarize:'in 4096 / out 64 (read-heavy)',
+                     generate:'in 64 / out 1024 (write-heavy)', sharegpt:'ShareGPT real dialogues'},
+        },
+      };
+      let lang = localStorage.getItem('demo_lang') ||
+                 (navigator.language && navigator.language.startsWith('zh') ? 'zh' : 'en');
+      const T = () => I18N[lang];
+      function applyStatic() {
+        document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = T()[el.dataset.i18n] || ''; });
+        document.getElementById('lang').textContent = lang === 'zh' ? 'EN' : '中文';
+        document.documentElement.lang = lang;
+      }
+      // Mount-point-agnostic API base: works at / (LAN), /console and /console/.
+      const BASE = location.pathname.endsWith('/') ? location.pathname : location.pathname + '/';
+      const GRAFANA = localStorage.getItem('grafana_url') || 'https://meter.aitra.ai';
+      document.getElementById('glink').href = GRAFANA + '/d/aitra-demo-a';
+      let sel = {models: new Set(), shape: 'balanced', concurrency: 8, duration: 'forever'};
+      let statusCache = null;
+
+      function pill(txt, key, group, desc) {
+        const d = document.createElement('div');
+        d.className = 'opt'; d.innerHTML = txt + (desc ? `<small>${desc}</small>` : '');
+        d.dataset.key = key;
+        d.onclick = () => {
+          if (group === 'model') {
+            d.classList.toggle('sel');
+            if (sel.models.has(key)) sel.models.delete(key); else sel.models.add(key);
+          } else {
+            sel[group] = (group === 'concurrency') ? parseInt(key) : key;
+            d.parentNode.querySelectorAll('.opt').forEach(x => x.classList.remove('sel'));
+            d.classList.add('sel');
+          }
+        };
+        return d;
+      }
+      function buildPickers(s) {
+        const mBox = document.getElementById('models'); mBox.innerHTML = '';
+        s.models.forEach(m => {
+          const p = pill(m, m, 'model');
+          if (sel.models.has(m)) p.classList.add('sel');
+          mBox.appendChild(p);
+        });
+        const shBox = document.getElementById('shapes'); shBox.innerHTML = '';
+        Object.entries(s.shapes).forEach(([k, lbls]) => {
+          const p = pill(lbls[lang], k, 'shape', T().shapeDesc[k] || '');
+          if (k === sel.shape) p.classList.add('sel');
+          shBox.appendChild(p);
+        });
+        const cBox = document.getElementById('conc'); cBox.innerHTML = '';
+        s.concurrency.forEach(c => {
+          const p = pill(String(c), String(c), 'concurrency');
+          if (c === sel.concurrency) p.classList.add('sel');
+          cBox.appendChild(p);
+        });
+        const dBox = document.getElementById('durs'); dBox.innerHTML = '';
+        Object.entries(s.durations).forEach(([k, lbls]) => {
+          const p = pill(lbls[lang], k, 'duration');
+          if (k === sel.duration) p.classList.add('sel');
+          dBox.appendChild(p);
+        });
+      }
+      async function refresh() {
+        try {
+          const r = await fetch(BASE + 'api/status');
+          if (r.status === 401) { location.reload(); return; }
+          const s = await r.json(); statusCache = s;
+          buildPickers(s);
+          const jb = document.getElementById('jobs');
+          jb.innerHTML = s.jobs.length ? s.jobs.map(j =>
+            `<tr><td>${j.name}</td><td>${j.model}</td><td>${j.desc}</td><td class="st-${j.state}">${j.state}</td></tr>`
+          ).join('') : `<tr><td colspan="4" style="color:var(--soft)">${T().noJobs}</td></tr>`;
+          const jt = document.getElementById('jpt');
+          jt.innerHTML = Object.entries(s.jpt).sort((a,b)=>a[1]-b[1]).map(([m,v]) =>
+            `<tr><td>${m}</td><td>${v}</td></tr>`).join('');
+          const st = document.getElementById('stats');
+          const p = s.power || {};
+          st.innerHTML = `<span>${T().servingW} <b>${p.serving ?? '—'}</b> W</span>` +
+                         `<span>${T().idleW} <b>${p.idle ?? '—'}</b> W</span>` +
+                         `<span>${T().baseline} <b>${s.loadgen > 0 ? T().on : T().off}</b></span>`;
+          const lg = document.getElementById('lg');
+          lg.textContent = s.loadgen > 0 ? T().lgOn : T().lgOff;
+          lg.className = s.loadgen > 0 ? '' : 'off';
+          lg.dataset.on = s.loadgen > 0 ? '1' : '0';
+        } catch (e) { /* keep last view */ }
+      }
+      const msg = document.getElementById('msg');
+      function say(t, cls) { msg.textContent = t; msg.className = cls || ''; }
+      async function post(path, body) {
+        const r = await fetch(path, {method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify(body || {})});
+        return r.json();
+      }
+      function report(d) {
+        const ok = (d.started || []).length;
+        let t = ok ? T().started(ok) : '';
+        if (d.errors && d.errors.length) t += (t ? ' · ' : '✗ ') + d.errors.join(' · ');
+        say(t || '✗', d.errors && !ok ? 'err' : 'ok');
+      }
+      document.getElementById('go').onclick = async () => {
+        if (!sel.models.size) { say(T().pickModel, 'err'); return; }
+        say(T().starting);
+        const d = await post(BASE + 'api/start',
+          {models: [...sel.models], shape: sel.shape, concurrency: sel.concurrency, duration: sel.duration});
+        report(d); refresh();
+      };
+      document.querySelectorAll('.scenebtn').forEach(b => b.onclick = async () => {
+        if (!sel.models.size) { say(T().pickModel, 'err'); return; }
+        say(T().starting);
+        const d = await post(BASE + 'api/start',
+          {models: [...sel.models], shape: sel.shape, scene: b.dataset.scene});
+        report(d); refresh();
+      });
+      document.getElementById('stop').onclick = async () => {
+        const d = await post(BASE + 'api/stop');
+        say(T().stopped(d.stopped || 0), 'ok'); refresh();
+      };
+      document.getElementById('lg').onclick = async (e) => {
+        const on = e.target.dataset.on === '1';
+        say(on ? T().lgClosing : T().lgOpening);
+        const d = await post(BASE + 'api/loadgen', {on: !on});
+        say(d.error ? ('✗ ' + d.error) : (on ? T().lgClosed : T().lgOpened), d.error ? 'err' : 'ok');
+        refresh();
+      };
+      document.getElementById('lang').onclick = () => {
+        lang = lang === 'zh' ? 'en' : 'zh';
+        localStorage.setItem('demo_lang', lang);
+        applyStatic();
+        if (statusCache) buildPickers(statusCache);
+        refresh();
+      };
+      applyStatic(); refresh(); setInterval(refresh, 5000);
+    </script></main></body></html>
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-control
+  namespace: aitra-system
+  labels:
+    app: demo-control
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demo-control
+  template:
+    metadata:
+      labels:
+        app: demo-control
+    spec:
+      serviceAccountName: demo-control
+      nodeSelector:
+        kubernetes.io/hostname: xspark
+      containers:
+        - name: panel
+          image: vllm/vllm-openai:v0.19.0
+          imagePullPolicy: Never
+          command: ["python3", "/app/app.py"]
+          env:
+            - name: PROM_URL
+              value: "http://aitra-meter-prometheus:9090"
+            - name: ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: demo-control-key
+                  key: key
+                  optional: true   # absent Secret = open LAN mode
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: app
+              mountPath: /app
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: app
+          configMap:
+            name: demo-control-app
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-control
+  namespace: aitra-system
+  labels:
+    app: demo-control
+spec:
+  type: NodePort
+  selector:
+    app: demo-control
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      nodePort: 30853

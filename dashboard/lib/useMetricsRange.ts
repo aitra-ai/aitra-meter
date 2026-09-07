@@ -20,7 +20,8 @@ async function fetchRange(params: RangeParams): Promise<PrometheusRangeSeries[]>
     end: String(end),
     step,
   });
-  const res = await fetch(`/api/metrics/range?${qs}`, { cache: "no-store" });
+  const base = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+  const res = await fetch(`${base}/api/metrics/range?${qs}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const json = await res.json();
   if (json.error) throw new Error(json.error);

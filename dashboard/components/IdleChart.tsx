@@ -15,9 +15,12 @@ import { useMetricsRange } from "@/lib/useMetricsRange";
 import { parseValue } from "@/lib/prometheus";
 
 // Power drawn while inference is running (W)
-const Q_SERVING = "aitra_gpu_power_watts * on(node) group_left() (aitra_j_per_token > 0)";
+// Per-model agents emit one power series per model plus an "idle" residual
+// series; serving power is simply the non-idle sum. (The old join against
+// aitra_j_per_token became many-to-many once nodes serve several models.)
+const Q_SERVING = 'sum by (node) (aitra_gpu_power_watts{gpu_id!="idle"})';
 // Total GPU power per node (serving + idle — use raw power)
-const Q_TOTAL = "aitra_gpu_power_watts";
+const Q_TOTAL = "sum by (node) (aitra_gpu_power_watts)";
 
 type WindowOption = { label: string; hours: number; step: string };
 const WINDOWS: WindowOption[] = [

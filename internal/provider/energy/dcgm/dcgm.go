@@ -164,6 +164,43 @@ func (d *DCGMProvider) Devices(ctx context.Context) ([]provider.Device, error) {
 	return devices, nil
 }
 
+// DeviceEnergyJoules returns the cumulative energy counter per GPU in joules,
+// keyed by UUID (falling back to the gpu index label when UUID is absent).
+// It implements provider.PerDeviceEnergy for per-model attribution. Like
+// totalEnergyJoules, an empty scrape is an error rather than zero energy.
+func (d *DCGMProvider) DeviceEnergyJoules(ctx context.Context) (map[string]float64, error) {
+	lines, err := d.rawLines(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]float64{}
+	for _, line := range lines {
+		if !metricLine(line, d.energyMetric) {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		v, err := strconv.ParseFloat(fields[len(fields)-1], 64)
+		if err != nil {
+			continue
+		}
+		id := extractLabel(line, uuidLabel)
+		if id == "" {
+			id = extractLabel(line, gpuLabel)
+		}
+		if id == "" {
+			continue
+		}
+		out[id] = v / 1000.0 // millijoules → joules
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("metric %q not found at %s", d.energyMetric, d.endpoint)
+	}
+	return out, nil
+}
+
 // totalEnergyJoules sums the energy counter (millijoules) across GPUs and
 // converts to joules. It errors when the metric is absent so a failed or empty
 // scrape is not silently read as zero energy.

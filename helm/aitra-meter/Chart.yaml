@@ -2,8 +2,8 @@ apiVersion: v2
 name: aitra-meter
 description: Open-source Kubernetes-native AI inference efficiency measurement
 type: application
-version: 0.1.0
-appVersion: "0.1.0"
+version: 0.8.0
+appVersion: "0.8.0"
 
 keywords:
   - ai
@@ -21,3 +21,5 @@ sources:
 maintainers:
   - name: stevenphtan
     url: https://github.com/stevenphtan
+  - name: skdwriting
+    url: https://github.com/skdwriting

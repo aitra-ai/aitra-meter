@@ -1,9 +1,11 @@
 {
   "title": "OpenCost + Aitra Meter — Cost per namespace",
-  "description": "Side-by-side: GPU-hour cost (OpenCost) vs token cost (Aitra Meter) per namespace. The gap between these two views surfaces serving efficiency differences that neither tool sees alone.",
+  "description": "Side-by-side: GPU-hour cost (OpenCost), token cost (Aitra Meter), and derived GPU spend per token, per namespace. The gap between these views surfaces serving efficiency differences that neither tool sees alone.",
   "tags": ["aitra-meter", "opencost", "finops"],
   "panels": [
     {
+      "id": 1,
+      "gridPos": { "h": 12, "w": 8, "x": 0, "y": 0 },
       "title": "GPU-hour cost per namespace (OpenCost)",
       "type": "bargauge",
       "targets": [
@@ -12,9 +14,14 @@
           "legendFormat": "{{namespace}}"
         }
       ],
+      "fieldConfig": {
+        "defaults": { "unit": "currencyUSD", "decimals": 2 }
+      },
       "description": "Source: OpenCost. Cost per namespace based on GPU-hour allocation."
     },
     {
+      "id": 2,
+      "gridPos": { "h": 12, "w": 8, "x": 8, "y": 0 },
       "title": "Token cost per namespace — $/M tokens (Aitra Meter)",
       "type": "bargauge",
       "targets": [
@@ -23,7 +30,26 @@
           "legendFormat": "{{namespace}}"
         }
       ],
+      "fieldConfig": {
+        "defaults": { "unit": "currencyUSD", "decimals": 2 }
+      },
       "description": "Source: Aitra Meter. Cost per namespace based on output token volume."
+    },
+    {
+      "id": 3,
+      "gridPos": { "h": 12, "w": 8, "x": 16, "y": 0 },
+      "title": "GPU spend per token — derived (OpenCost ÷ Aitra Meter)",
+      "type": "bargauge",
+      "targets": [
+        {
+          "expr": "aitra:opencost_cost_per_token_ratio",
+          "legendFormat": "{{namespace}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "currencyUSD", "decimals": 8 }
+      },
+      "description": "Derived: hourly GPU spend (OpenCost) divided by hourly token throughput (Aitra Meter). Requires the aitra:opencost_cost_per_token_ratio recording rule from examples/alerting-rules.yaml. A high ratio with low GPU-hour cost signals cheap hardware serving inefficiently."
     }
   ],
   "schemaVersion": 38

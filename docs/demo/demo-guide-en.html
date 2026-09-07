@@ -1,0 +1,443 @@
+<title>Aitra Meter — Demo Field Guide</title>
+<style>
+  :root {
+    --bg: #FAFAF7;
+    --surface: #F1F0EA;
+    --ink: #1E2528;
+    --ink-soft: #5A6468;
+    --line: #DDDBD2;
+    --accent: #B97A10;
+    --accent-soft: #F3E4C8;
+    --tele: #24767A;
+    --ok: #3D8B5F;
+    --warn: #C24E42;
+    --code-bg: #ECEAE2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14181A; --surface: #1C2225; --ink: #E8E6E0; --ink-soft: #9AA4A8;
+      --line: #2E3639; --accent: #E8A020; --accent-soft: #3A2F18; --tele: #4FB3B8;
+      --ok: #5FBF8A; --warn: #E0705F; --code-bg: #20272A;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14181A; --surface: #1C2225; --ink: #E8E6E0; --ink-soft: #9AA4A8;
+    --line: #2E3639; --accent: #E8A020; --accent-soft: #3A2F18; --tele: #4FB3B8;
+    --ok: #5FBF8A; --warn: #E0705F; --code-bg: #20272A;
+  }
+  :root[data-theme="light"] {
+    --bg: #FAFAF7; --surface: #F1F0EA; --ink: #1E2528; --ink-soft: #5A6468;
+    --line: #DDDBD2; --accent: #B97A10; --accent-soft: #F3E4C8; --tele: #24767A;
+    --ok: #3D8B5F; --warn: #C24E42; --code-bg: #ECEAE2;
+  }
+  html { background: var(--bg); }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 16px/1.7 "Avenir Next", "Segoe UI", system-ui, sans-serif;
+    margin: 0; padding: 0 20px 96px;
+  }
+  main { max-width: 920px; margin: 0 auto; }
+  header.masthead { padding: 56px 0 28px; border-bottom: 2px solid var(--ink); margin-bottom: 8px; }
+  .eyebrow {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--accent); font-weight: 600;
+  }
+  h1 { font-size: clamp(28px, 5vw, 40px); line-height: 1.15; margin: 12px 0 14px; font-weight: 700; letter-spacing: -0.015em; text-wrap: balance; }
+  .standfirst { color: var(--ink-soft); max-width: 62ch; margin: 0; }
+  .meta-row {
+    display: flex; flex-wrap: wrap; gap: 10px 24px; margin-top: 22px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; color: var(--ink-soft);
+  }
+  .meta-row b { color: var(--ink); font-weight: 600; }
+  section { margin-top: 60px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; border-bottom: 1px solid var(--line); padding-bottom: 10px; margin-bottom: 20px; }
+  .sec-num { font-family: ui-monospace, "SF Mono", Menlo, monospace; color: var(--accent); font-weight: 700; font-size: 15px; }
+  h2 { font-size: 22px; margin: 0; font-weight: 700; }
+  h3 { font-size: 16.5px; margin: 30px 0 10px; font-weight: 700; }
+  p { max-width: 68ch; }
+  .soft { color: var(--ink-soft); }
+  .bigidea { background: var(--accent-soft); border-radius: 8px; padding: 16px 20px; margin: 18px 0; font-size: 16.5px; max-width: 68ch; }
+  .bigidea b { color: var(--accent); }
+  .diagram-wrap { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 18px; overflow-x: auto; margin: 18px 0; }
+  pre.mermaid { margin: 0; background: transparent; min-width: 620px; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 14px; font-variant-numeric: tabular-nums; }
+  th { text-align: left; font-size: 12.5px; letter-spacing: 0.05em; color: var(--ink-soft); font-weight: 600; padding: 8px 14px 8px 0; border-bottom: 2px solid var(--ink); }
+  td { padding: 10px 14px 10px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td.num { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; white-space: nowrap; }
+  tr.hl td { background: var(--accent-soft); }
+  .orig { display: block; margin-top: 4px; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11.5px; color: var(--ink-soft); font-weight: 400; }
+  .table-wrap { overflow-x: auto; }
+  code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.86em; background: var(--code-bg); border-radius: 4px; padding: 1px 6px; }
+  pre.block { background: var(--code-bg); border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; overflow-x: auto; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; line-height: 1.6; }
+  pre.block code { background: none; padding: 0; }
+  .pill { display: inline-block; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 999px; vertical-align: 1px; }
+  .pill.moe { background: var(--accent-soft); color: var(--accent); }
+  .callout { border-left: 3px solid var(--accent); background: var(--surface); padding: 14px 18px; margin: 20px 0; border-radius: 0 6px 6px 0; }
+  .callout.red { border-left-color: var(--warn); }
+  .callout p { margin: 0; }
+  .callout p + p { margin-top: 8px; }
+  ul.tight, ol.tight { padding-left: 20px; }
+  ul.tight li, ol.tight li { margin: 8px 0; max-width: 68ch; }
+  ul.tight li::marker { color: var(--accent); }
+  ol.tight li::marker { color: var(--accent); font-weight: 600; }
+  details { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 12px 18px; margin: 16px 0; max-width: 72ch; }
+  details summary { cursor: pointer; font-weight: 600; font-size: 14px; color: var(--tele); user-select: none; }
+  details[open] summary { margin-bottom: 10px; }
+  details p, details li { font-size: 14.5px; }
+  a { color: var(--tele); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  footer { margin-top: 80px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-soft); }
+</style>
+
+<main>
+<header class="masthead">
+  <div class="eyebrow">KubeCon Japan 2026 · Demo Field Guide</div>
+  <h1>Aitra Meter: a per-model electricity meter for AI inference</h1>
+  <p class="standfirst">One 8-GPU server runs eight of the newest Qwen3.5/3.6 models while Aitra Meter measures, live, how many joules each model spends per generated token — and a console lets you reshape the traffic on stage with the boards responding in seconds. This guide covers the environment, the measurement principles, the workloads, the console, the dashboards, and conference Q&amp;A.</p>
+  <div class="meta-row">
+    <span>Compute <b>GPU server (10.100.18.25) · 8× A100-80G</b></span>
+    <span>Fleet <b>Qwen3.5 / Qwen3.6 × 8</b></span>
+    <span>Code <b>PR #91</b></span>
+  </div>
+</header>
+
+<!-- ======================================================= 1 -->
+<section>
+  <div class="sec-head"><span class="sec-num">1</span><h2>Deployment topology</h2></div>
+
+  <div class="bigidea">In one sentence: everything runs in a Kubernetes cluster on <b>a single 8× A100 server</b>; the public internet reaches it only through <b>outbound</b> tunnels — spectators are on the public web, operators are on the LAN, and no inbound port is ever opened.</div>
+
+  <h3>1.1 Cluster and nodes</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Node</th><th>IP</th><th>Role</th><th>Hardware</th></tr>
+    <tr><td><code>k8s-master</code></td><td class="num">10.100.18.24</td><td>Control plane (API server :6443), cordoned — no workloads</td><td>—</td></tr>
+    <tr><td><code>xspark</code></td><td class="num">10.100.18.25</td><td>The one worker: models, metering, storage, boards, console</td><td>8× A100-SXM4-80GB · 1.7 TB NVMe</td></tr>
+  </table></div>
+  <p class="soft">Kubernetes v1.32, docker runtime (cri-dockerd). Metering images are built on the node and used with <code>imagePullPolicy: Never</code>; model weights and datasets live on the host (<code>/root/aitra-models</code>, <code>/root/aitra-datasets</code>), hostPath-mounted and loaded offline.</p>
+
+  <h3>1.2 Components (namespace: aitra-system)</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Component</th><th>Kind</th><th>Port</th><th>Role</th></tr>
+    <tr><td><code>vllm-q35-*</code> / <code>vllm-q36-*</code> ×8</td><td>Deployment + Service</td><td class="num">8000</td><td>Eight model servers, one whole GPU each (<code>nvidia.com/gpu: 1</code>)</td></tr>
+    <tr><td><code>dcgm-exporter</code></td><td>DaemonSet</td><td class="num">9400</td><td>Per-GPU cumulative energy counters (by UUID), 2.5 s collect interval</td></tr>
+    <tr><td><code>aitra-meter-agent</code></td><td>DaemonSet</td><td class="num">—</td><td>Collector: <code>--per-model</code>, one attribution round every 5 s window</td></tr>
+    <tr><td><code>aitra-meter-aggregation</code></td><td>Deployment</td><td class="num">9091 gRPC / 8080</td><td>Accountant: J/token, display semantics, idle bookkeeping</td></tr>
+    <tr><td><code>aitra-meter-prometheus</code></td><td>Deployment</td><td class="num">9090 → 30990</td><td>Metric store, 2 s scrape, 2-day retention</td></tr>
+    <tr><td><code>grafana</code></td><td>Deployment</td><td class="num">3000 → 30852</td><td>Main demo surface: anonymous read-only, Demo A/B/C boards</td></tr>
+    <tr><td><code>aitra-meter-dashboard</code></td><td>Deployment</td><td class="num">3000 → 30851</td><td>Meter dashboard: tables, chargeback, carbon (served under <code>/board</code>)</td></tr>
+    <tr class="hl"><td><code>demo-control</code></td><td>Deployment</td><td class="num">8080 → 30853</td><td><strong>Demo traffic console</strong>, access-key gated (see §4)</td></tr>
+    <tr><td><code>vllm-fleet-loadgen</code></td><td>Deployment</td><td class="num">—</td><td>Baseline traffic: a light request loop per model (console toggles it)</td></tr>
+  </table></div>
+
+  <div class="diagram-wrap">
+<pre class="mermaid">
+flowchart LR
+  subgraph PUB["Public internet (watching)"]
+    B1["Any browser"]
+  end
+  subgraph LAN["LAN (operating)"]
+    OP["Presenter's browser"]
+  end
+
+  subgraph TUN["systemd-managed cloudflared tunnels ×3 (outbound only)"]
+    T1["→ :30852"]
+    T2["→ :30851"]
+    T3["→ :30853"]
+  end
+
+  subgraph XS["A100 GPU server (.25) · ns: aitra-system"]
+    CTL["demo-control :30853"]
+    F["vLLM fleet ×8<br/>:8000 · one GPU each"]
+    LG["fleet-loadgen<br/>baseline traffic"]
+    JOBS["bench Jobs<br/>(created by console)"]
+    DCGM["dcgm-exporter :9400"]
+    AG["measurement-agent<br/>--per-model"]
+    AGG["aggregation-service"]
+    PROM["Prometheus · 30990"]
+    GRAF["Grafana · 30852"]
+    DASH["Meter dashboard · 30851"]
+  end
+
+  B1 -- "meter.aitra.ai (Vercel)" --> T1 --> GRAF
+  B1 -- "/board" --> T2 --> DASH
+  B1 -- "/console" --> T3 --> CTL
+  OP --> CTL
+  CTL -- "create/stop Jobs · toggle baseline" --> JOBS
+  CTL -.-> LG
+  JOBS -- "bench requests" --> F
+  LG -- "light traffic" --> F
+  F -- "per-pod /metrics" --> AG
+  DCGM -- "per-GPU joules" --> AG
+  AG -- "gRPC ×9 per window" --> AGG
+  AGG --> PROM
+  PROM --> GRAF
+  PROM --> DASH
+</pre>
+  </div>
+
+  <h3>1.3 Where to point people (one domain, three faces)</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Surface</th><th>Public (fixed)</th><th>LAN fallback</th></tr>
+    <tr><td><strong>Grafana demo boards</strong></td><td><a href="https://meter.aitra.ai">meter.aitra.ai</a> (anonymous read-only)</td><td class="num">10.100.18.25:30852</td></tr>
+    <tr><td><strong>Meter dashboard</strong> (tables / chargeback / carbon)</td><td><a href="https://meter.aitra.ai/board">meter.aitra.ai/board</a></td><td class="num">10.100.18.25:30851/board</td></tr>
+    <tr><td><strong>Demo console</strong></td><td><code>meter.aitra.ai/console?k=&lt;access key&gt;</code></td><td class="num">10.100.18.25:30853/?k=&lt;key&gt;</td></tr>
+    <tr><td>Prometheus (debug)</td><td class="soft">not exposed publicly</td><td class="num">10.100.18.25:30990</td></tr>
+  </table></div>
+  <div class="callout">
+    <p><strong>Public chain:</strong> <code>meter.aitra.ai</code> (Vercel, fixed domain + TLS) rewrites by path onto three <strong>systemd-managed cloudflared tunnels</strong> on the lab server (auto-start, self-healing). A Tailscale Funnel with a permanent hostname (<code>xspark.tailcb46cf.ts.net</code>) is kept as a bypass and becomes the zero-maintenance end state once its DNS stabilises.</p>
+    <p><strong>Security model:</strong> all tunnels are outbound-only; zero inbound ports; raw Prometheus and the K8s API are never public; the console is gated by an access key (Secret <code>demo-control-key</code>).</p>
+    <p><strong>After a server reboot:</strong> everything self-restores except that quick-tunnel URLs rotate — run <code>grep -o 'https://.*trycloudflare.com' /root/tunnel-*.log | tail -4</code> for the new URLs and redeploy the <code>meter-booth</code> Vercel project's <code>vercel.json</code> (≈2 minutes).</p>
+  </div>
+</section>
+
+<!-- ======================================================= 2 -->
+<section>
+  <div class="sec-head"><span class="sec-num">2</span><h2>How the metering works</h2></div>
+
+  <div class="bigidea">Analogy: an apartment building has <b>one master electricity meter</b> and eight tenants. Aitra Meter installs a sub-meter per tenant, reads it every window, and issues per-tenant bills — the "tenant" is a model, and the unit price is <b>J/token: joules per generated token</b>. Core rule: <b>energy is counted per GPU, GPUs are grouped by the pod that holds them, and summing happens only inside a group.</b></div>
+
+  <h3>The headline metric: J/token</h3>
+  <p>Joules per token — how much energy the GPU spends for every token a model generates. Lower is better. For intuition:</p>
+  <ul class="tight">
+    <li>The smallest model at baseline: 1.8 J/token — a million tokens ≈ <strong>0.5 kWh</strong>;</li>
+    <li>The largest dense model at baseline: 13.6 J/token — a million tokens ≈ <strong>3.8 kWh</strong>;</li>
+    <li>Fully batched, measured as low as 0.07 J/token — a million tokens ≈ <strong>0.02 kWh</strong>.</li>
+  </ul>
+
+  <h3>The reading cycle (every 5-second window)</h3>
+  <ol class="tight">
+    <li><strong>Who holds which GPUs</strong> — read the kubelet device-plugin checkpoint (Kubernetes records this anyway; zero configuration — new models enrol automatically, departed ones disappear);</li>
+    <li><strong>What each GPU spent</strong> — per-GPU cumulative hardware energy counters from dcgm-exporter, differenced against the previous window;</li>
+    <li><strong>What each model produced</strong> — each pod's own vLLM <code>/metrics</code> token counter, likewise differenced;</li>
+    <li><strong>The bill</strong> — per model: energy of exactly its GPUs ÷ its tokens (TP pods sum exactly their k GPUs). GPUs held by nobody are booked separately as <strong>idle</strong> — never split among tenants.</li>
+  </ol>
+
+  <h3>Display semantics (what the boards will and won't show)</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Situation</th><th>J/token shows</th><th>Why</th></tr>
+    <tr><td>Normal serving window (≥ 30 tokens)</td><td><strong>the measured value</strong></td><td>both numerator and denominator are statistically meaningful</td></tr>
+    <tr class="hl"><td>Window under 30 tokens (traffic boundary, deep queue)</td><td><strong>0</strong></td><td>a handful of tokens against a hot GPU reads absurdly high — noise, never displayed</td></tr>
+    <tr class="hl"><td>Model holds a GPU but has zero traffic (idle demo)</td><td><strong>0</strong> (power stays truthful)</td><td>boards must reflect <em>now</em>, not freeze at a stale value; the resting wattage stays visible on the power panels</td></tr>
+    <tr><td>GPUs held by no pod</td><td>booked as the idle residual</td><td>true standby cost, charged to nobody</td></tr>
+  </table></div>
+  <p class="soft">One-line doctrine: <strong>a non-zero J/token is a trustworthy measurement; anything untrustworthy reads zero. There is no in-between.</strong> A rolling CV (coefficient-of-variation) gate &lt; 3 % backs every quoted number.</p>
+
+  <h3>Verify it yourself, live</h3>
+  <p>Since the window length cancels out, J/token ≈ <strong>watts ÷ tokens-per-second</strong>. Measured example (0.8B under load): 199.3 W ÷ 2294 tok/s = <strong>0.087 J/token</strong> — matching the board's 0.09. Anyone can audit any tile this way at any moment.</p>
+
+  <details><summary>Engineering details: components and degradation</summary>
+    <ul class="tight">
+      <li>Checkpoint parsing accepts both NUMA-map and flat layouts; intersected with Running pods to drop terminated leftovers;</li>
+      <li>Energy counters clamp on reset; a failed scrape skips the tick and the next one spans the gap — no energy lost;</li>
+      <li>Model naming: vLLM <code>model_name</code> label → pod labels (<code>aitra-ai.github.io/model-name</code> / <code>model</code> / <code>app</code>) → pod name;</li>
+      <li>Unreachable pod endpoints (model loading, non-vLLM) count zero tokens but still pay for their GPUs;</li>
+      <li>Processes sharing one GPU (MPS/time-slicing) cannot be split by hardware counters — attribution degrades to token-proportional and is labelled <code>attribution_method: proportional</code>; <strong>prefill/decode phase energy is an explicit non-goal</strong>;</li>
+      <li>Agent RBAC is read-only pods/nodes; <code>runAsUser: 0</code> only because the checkpoint directory is root-owned.</li>
+    </ul>
+  </details>
+</section>
+
+<!-- ======================================================= 3 -->
+<section>
+  <div class="sec-head"><span class="sec-num">3</span><h2>What's running: models, traffic, two states</h2></div>
+
+  <div class="bigidea">The single most important insight: <b>J/token is a property of model × load, not of the model alone.</b> Every model below gets two numbers — the baseline (concurrency ≈ 1, a conservative upper bound) and the loaded value (sustained batching, the production lower bound). The gap is your optimisation headroom.</div>
+
+  <h3>3.1 Eight models × two states (all measured)</h3>
+  <div class="table-wrap"><table>
+    <tr><th>GPU</th><th>Model (HF repo)</th><th>Type/precision</th><th>Baseline J/token<br/>(c≈1)</th><th>Loaded J/token<br/>(sustained)</th><th>Drop</th></tr>
+    <tr><td class="num">0</td><td>Qwen3.5-0.8B</td><td>dense bf16</td><td class="num">1.82</td><td class="num">0.09</td><td class="num">×20</td></tr>
+    <tr><td class="num">1</td><td>Qwen3.5-2B</td><td>dense bf16</td><td class="num">2.50</td><td class="num">0.11</td><td class="num">×23</td></tr>
+    <tr class="hl"><td class="num">2</td><td>Qwen3.6-35B-A3B-FP8 <span class="pill moe">MoE · 3B active</span></td><td>sparse fp8</td><td class="num">2.72</td><td class="num">0.46</td><td class="num">×6</td></tr>
+    <tr><td class="num">3</td><td>Qwen3.5-4B</td><td>dense bf16</td><td class="num">3.46</td><td class="num">0.28</td><td class="num">×12</td></tr>
+    <tr><td class="num">4</td><td>Qwen3.5-9B</td><td>dense bf16</td><td class="num">5.15</td><td class="num">0.54</td><td class="num">×10</td></tr>
+    <tr class="hl"><td class="num">5</td><td>Qwen3.5-122B-A10B-Int4 <span class="pill moe">MoE · 10B active</span></td><td>sparse int4</td><td class="num">7.49</td><td class="num">1.25</td><td class="num">×6</td></tr>
+    <tr><td class="num">6</td><td>Qwen3.6-27B-FP8</td><td>dense fp8</td><td class="num">8.48</td><td class="num">1.19</td><td class="num">×7</td></tr>
+    <tr><td class="num">7</td><td>Qwen3.6-27B</td><td>dense bf16</td><td class="num">13.63</td><td class="num">1.75</td><td class="num">×8</td></tr>
+  </table></div>
+  <p class="soft">Conversion anchor: 1 J/token ≈ 0.28 kWh per million tokens. FP8 weights run on Ampere via vLLM's Marlin weight-only path; the 122B-Int4 tile barely fits one 80 GB card (enforce-eager, text-only, 4 k context — its slight "eager tax" is itself a talking point about runtime config affecting efficiency).</p>
+
+  <h3>3.2 Four ready-made storylines</h3>
+  <ul class="tight">
+    <li><strong>The size ladder</strong> — 0.8B → 27B: ~7.5× more energy per token as parameters grow;</li>
+    <li><strong>Quantisation A/B</strong> — the same Qwen3.6-27B in bf16 vs FP8: <strong>38 % saved per token</strong>, identical hardware and traffic;</li>
+    <li><strong>Sparse activation</strong> — both MoE models punch far below their weight class: the 35B-A3B costs about what a 2B dense costs. <em>You pay for activated parameters, not total parameters;</em></li>
+    <li><strong>Batching dividends shrink with size</strong> — small models drop 20×, the 27B only 8×: small models have more idle silicon to amortise. A direct scheduling insight.</li>
+  </ul>
+
+  <h3>3.3 Where the traffic comes from</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Source</th><th>Content</th><th>Controlled by</th></tr>
+    <tr><td><strong>Baseline loadgen</strong></td><td>6 fixed English Q&amp;A prompts (GPU-efficiency themed), one request every ~2 s per model, 128 output tokens — the heartbeat that keeps every tile alive</td><td>console on/off toggle (off = the idle-state demo)</td></tr>
+    <tr><td><strong>Synthetic bench</strong></td><td>vLLM's official benchmarker, random token dataset, precisely controlled lengths (three shapes, §4)</td><td>console, by dimension</td></tr>
+    <tr><td><strong>Real conversations</strong></td><td>ShareGPT V3 — 94 k real human-AI dialogues (10 k subset for fast startup); naturally varied lengths, production-shaped curves</td><td>console "Real conversations" shape</td></tr>
+  </table></div>
+</section>
+
+<!-- ======================================================= 4 -->
+<section>
+  <div class="sec-head"><span class="sec-num">4</span><h2>The demo console: your cockpit</h2></div>
+
+  <div class="bigidea">The whole show runs with <b>zero command line</b>: open <code>meter.aitra.ai/console?k=&lt;key&gt;</code> (bilingual zh/EN), make four picks, press one button — the boards respond within seconds.</div>
+
+  <h3>4.1 Dimensions (all whitelisted, no free-form input)</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Dimension</th><th>Options</th><th>Note</th></tr>
+    <tr><td>① Models</td><td>8, <strong>multi-select</strong></td><td>multi-select = the same scenario across models, an instant comparison experiment (e.g. 27B vs 27B-FP8)</td></tr>
+    <tr><td>② Task shape</td><td>Balanced chat (512/256) · Long-doc summarize (4096/64) · Long-form generate (64/1024) · Real conversations (ShareGPT)</td><td>(input/output tokens) — shape itself is an energy variable</td></tr>
+    <tr><td>③ Concurrency</td><td>1 / 4 / 8 / 16 / 32 / 64</td><td>requests in flight — the batching-dividend dial</td></tr>
+    <tr><td>④ Duration</td><td>5 min / 30 min / <strong>continuous</strong> (default)</td><td>continuous loops until you stop it; 4-hour hard ceiling as a safety net</td></tr>
+  </table></div>
+
+  <h3>4.2 Scenes and global switches</h3>
+  <ul class="tight">
+    <li><strong>📈 Sweep 1→32</strong> (~12 min) — steps concurrency for the selected model(s): the Demo C descent curve on demand;</li>
+    <li><strong>💓 Burst ×8</strong> — 30 s full load / 60 s quiet: heartbeat curves, the crowd-pleaser;</li>
+    <li><strong>⏻ Baseline toggle</strong> — off = fleet-wide idle (J/token drops to zero, power shows true resting draw); on = back to normal. One round trip is a complete idle-cost demo;</li>
+    <li><strong>■ Stop all</strong> — the kill switch; back to baseline within a window.</li>
+  </ul>
+
+  <h3>4.3 A 15-minute script you can follow verbatim</h3>
+  <ol class="tight">
+    <li><strong>Steady-state opening</strong> — Demo A: eight tiles in their lanes; tell the size-ladder and MoE stories;</li>
+    <li><strong>Idle</strong> — baseline off: within a minute everything reads zero while power reveals the resting floor ("idle silicon still burns money");</li>
+    <li><strong>Recovery + single-model dive</strong> — baseline on; pick 0.8B, Real conversations × c64 × continuous: watch 1.8 → 0.09 ("same GPU, 20× cheaper per token");</li>
+    <li><strong>Comparison experiment</strong> — multi-select 27B + 27B-FP8, same load: quantisation savings side by side, live;</li>
+    <li><strong>Heartbeat finale</strong> — select all eight, Burst; then Stop all, and the room goes calm.</li>
+  </ol>
+
+  <div class="callout red">
+    <p><strong>Security boundary:</strong> access-key gated (7-day cookie); RBAC pinned to namespace Jobs + scaling exactly one Deployment (the loadgen); every job hard-capped and TTL-cleaned; one job per model, eight globally; all dimensions validated server-side.</p>
+  </div>
+</section>
+
+<!-- ======================================================= 5 -->
+<section>
+  <div class="sec-head"><span class="sec-num">5</span><h2>Where the numbers live (Prometheus)</h2></div>
+
+  <div class="bigidea">Prometheus is the <b>ledger vault</b>: the accountant is scraped every 2 s, history kept 2 days. Every chart is a query against it — PromQL speakers can go straight to the source.</div>
+
+  <div class="table-wrap"><table>
+    <tr><th>Metric</th><th>What it records</th></tr>
+    <tr><td><code>aitra_j_per_token</code></td><td><strong>the headline ledger</strong>: each model's current joules-per-token (display semantics of §2 apply: trustworthy value or zero)</td></tr>
+    <tr><td><code>aitra_gpu_power_watts</code></td><td>power split: one series per model (<code>gpu_id</code> carries the model name) plus <code>idle</code>; node sum = whole machine</td></tr>
+    <tr><td><code>aitra_idle_power_watts</code></td><td>wattage of GPUs held by nobody — the true standby floor</td></tr>
+    <tr><td><code>aitra_model_tokens_total</code></td><td>cumulative output tokens; <code>rate()</code> = throughput</td></tr>
+    <tr><td><code>aitra_measurement_cv</code></td><td>number wobble; &lt; 3 % = trustworthy (with <code>aitra_measurement_window_stable</code>)</td></tr>
+    <tr><td><code>aitra_cost_per_million_tokens_usd</code> / <code>aitra_co2_per_token_grams</code></td><td>derived: money and carbon via PUE, tariff, grid intensity</td></tr>
+  </table></div>
+
+  <details><summary>Queries worth knowing (LAN :30990)</summary>
+<pre class="block"><code># the eight tiles' raw data
+aitra_j_per_token
+
+# power reconciliation: serving + idle ≈ whole node
+sum(aitra_gpu_power_watts{gpu_id!="idle"})
+sum(aitra_idle_power_watts)
+
+# per-model throughput
+sum by (model) (rate(aitra_model_tokens_total[2m]))
+
+# audit any tile: watts ÷ tok/s ≈ its J/token
+aitra_gpu_power_watts{gpu_id="qwen3.5-0.8b"}
+  / on() sum(rate(aitra_model_tokens_total{model="qwen3.5-0.8b"}[1m]))
+
+# the do-not-quote list (currently wobbling)
+aitra_measurement_cv &gt; 0.03</code></pre>
+  </details>
+</section>
+
+<!-- ======================================================= 6 -->
+<section>
+  <div class="sec-head"><span class="sec-num">6</span><h2>Reading the boards, panel by panel</h2></div>
+
+  <div class="bigidea">The thesis every panel serves: <b>"eight independent bills that add up to the master meter, displayed only when trustworthy."</b></div>
+
+  <h3>6.1 Grafana · Demo A "Heterogeneous Fleet" (home)</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Panel</th><th>Shows</th><th>Healthy looks like</th></tr>
+    <tr><td><strong>Eight stat tiles</strong><span class="orig">J/token — &lt;model&gt; · aitra_j_per_token</span></td><td>each model's current J/token</td><td>all different, independently moving; <strong>0</strong> during idle/no-traffic is correct semantics. ⚠ two tiles tracking identically = attribution leak — halt</td></tr>
+    <tr><td><strong>Eight-line chart</strong><span class="orig">J/token by model</span></td><td>price history</td><td>parallel layers, never entangled; drops under load, falls to 0 on cut-off</td></tr>
+    <tr><td><strong>Tokens per second</strong><span class="orig">Output tokens/sec by model · rate(aitra_model_tokens_total[2m])</span></td><td>output speed (token/s)</td><td>baseline ~50–110; tens of × under load; zero = that model lost traffic</td></tr>
+    <tr><td><strong>Stacked power</strong><span class="orig">GPU power by model (stacked) + idle floor · aitra_gpu_power_watts</span></td><td>the whole machine's power "cake", one slice per model + idle base</td><td><strong>the reconciliation chart</strong>: slice heights sum ≈ machine total</td></tr>
+    <tr><td><strong>Four roll-ups</strong><span class="orig">Cluster J/token · Total GPU power · Idle floor · Fleet tokens/sec</span></td><td>fleet average / machine watts (~2.7 kW) / standby floor / total throughput</td><td>average sits inside the eight-model band</td></tr>
+  </table></div>
+
+  <h3>6.2 Grafana · Demo B "Tensor-Parallel Scaling" (pre-run, replayed on stage)</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Panel</th><th>How to read</th></tr>
+    <tr><td><strong>Current J/token</strong><span class="orig">J/token @ current TP degree</span></td><td>participating GPUs only. ⚠ TP=1 reading near machine level = grouping broken — halt</td></tr>
+    <tr><td><strong>Serving/idle watts</strong><span class="orig">Participating-GPU power / Idle power</span></td><td>TP=1: idle carries ~7 GPUs; TP=8: idle ≈ 0</td></tr>
+    <tr><td><strong>Gear-shift curve</strong><span class="orig">J/token over the TP sweep</span></td><td>steps at 1→2→4→8; the knee shows parallelism's energy cost</td></tr>
+    <tr><td><strong>Power transfer stack</strong><span class="orig">Power split: serving vs idle</span></td><td>serving layer thickens, idle thins; the two always sum ≈ machine</td></tr>
+  </table></div>
+
+  <h3>6.3 Grafana · Demo C "Workload Contrast" (live any time via console)</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Panel</th><th>How to read</th></tr>
+    <tr><td><strong>Shape contrast</strong><span class="orig">J/token by workload shape</span></td><td>one 9B model, three traffic shapes, three distinct price lines — <em>how</em> you use a model matters as much as which. Wording: aggregate difference, not per-phase measurement</td></tr>
+    <tr><td><strong>Concurrency descent</strong><span class="orig">J/token during the concurrency sweep</span></td><td>monotonic fall then plateau (measured 2.4 → 0.07); boundary blips are filtered by the min-token gate</td></tr>
+    <tr><td><strong>Throughput vs power</strong><span class="orig">Throughput vs power</span></td><td>the widening jaws = fixed power amortised — the "why" of the descent</td></tr>
+  </table></div>
+
+  <h3>6.4 Meter dashboard (/board)</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Block</th><th>How to read</th></tr>
+    <tr><td><strong>Fleet efficiency table</strong><span class="orig">FLEET EFFICIENCY</span></td><td>Demo A as a table — screenshot- and export-friendly</td></tr>
+    <tr><td><strong>Chargeback</strong><span class="orig">NAMESPACE CHARGEBACK</span></td><td>30-day kWh and cost per namespace; live PUE slider and tariff input, CSV export</td></tr>
+    <tr><td><strong>Idle consumption</strong><span class="orig">IDLE CONSUMPTION</span></td><td>working watts vs wasted watts — the cluster's "electricity utilisation"</td></tr>
+    <tr><td><strong>Carbon &amp; cost per token</strong><span class="orig">CARBON &amp; COST PER TOKEN</span></td><td>per-model money and gCO₂; every figure prints its derivation formula inline</td></tr>
+  </table></div>
+
+  <h3>6.5 Red flags (stop the segment)</h3>
+  <div class="callout red">
+    <p><strong>Two tiles tracking identically</strong> → attribution leak; switch to the recorded loop, debug offline.</p>
+    <p><strong>TP=1 reading machine-level energy</strong> → idle GPUs leaking into the numerator.</p>
+    <p><strong>CV persistently &gt; 3 %</strong> → don't quote that model's number; check for intermittent traffic first.</p>
+    <p><strong>Tokens at zero while power persists</strong> → the service lost traffic, not the meter; check the baseline toggle and job list.</p>
+  </div>
+</section>
+
+<!-- ======================================================= 7 -->
+<section>
+  <div class="sec-head"><span class="sec-num">7</span><h2>FAQ — conference Q&amp;A prep</h2></div>
+  <p class="soft">Ordered by how likely the question is at an open-source conference; every answer is short enough to deliver from memory.</p>
+
+  <h3>Project positioning</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Q</th><th>A</th></tr>
+    <tr><td>What is Aitra Meter and what problem does it solve?</td><td>An open-source <strong>energy meter for AI inference</strong> (a Prometheus exporter): in clusters where many models share GPUs, it attributes every joule to the specific model that spent it and reports <strong>J/token</strong> plus derived cost and carbon. It fixes the blind spot of "one big GPU power bill, nobody knows which model ran it up."</td></tr>
+    <tr><td>How is this different from Kepler / DCGM-exporter / Scaphandre?</td><td>Those report power at the <strong>hardware or container</strong> level. Aitra Meter adds the layer that matters for inference: <strong>per-model attribution joined with token output</strong> — numerator (measured energy of exactly that model's GPUs) and denominator (that model's own tokens) are both isolated per model, yielding a genuinely comparable efficiency unit. We consume DCGM as a data source, and Kepler integration is on the roadmap (issue #48).</td></tr>
+    <tr><td>Why J/token as the unit?</td><td>It's the "fuel economy" of inference: comparable across models, hardware and load, and multiplies straight into cost and carbon. We're also proposing <code>gen_ai.infrastructure.energy.*</code> to the OTel GenAI semantic conventions (issue #38) to make it a shared industry vocabulary.</td></tr>
+    <tr><td>License and status?</td><td>Apache-2.0, <code>github.com/aitra-ai/aitra-meter</code>, v0.8 line, one-command Helm install. Issues and PRs welcome — the booth runs mainline code.</td></tr>
+  </table></div>
+
+  <h3>How it works</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Q</th><th>A</th></tr>
+    <tr><td>How do you attribute energy to a single model?</td><td>Three steps: ① read the kubelet device-plugin checkpoint for "which pod holds which GPUs" (Kubernetes records this anyway — zero config); ② difference each GPU's <strong>hardware cumulative energy counter</strong> (DCGM) per window; ③ "GPUs group by holding pod; summing only inside a group" — single-GPU models are exact measurements, TP pods sum exactly their k GPUs, idle GPUs are booked separately and never smeared across tenants.</td></tr>
+    <tr><td>Do I need to change my model or serving code?</td><td>Zero intrusion. The agent discovers GPU-holding pods automatically and scrapes the engine's existing /metrics. Models appear on the board when they start and vanish when they scale down — at the booth, a third-party platform's model was discovered and metered with no configuration at all.</td></tr>
+    <tr><td>Measurement or estimation? How accurate?</td><td>Whole-GPU-per-model is <strong>measurement</strong> (hardware counters, no modelling): the same model isolated vs co-resident with 7 others differs by ~1 % J/token. Every figure carries a CV stability gate (&lt; 3 %), and windows under 30 tokens display nothing — <strong>non-zero means trustworthy</strong>.</td></tr>
+    <tr><td>Is J/token a constant per model?</td><td>No — it's a property of <strong>model × load</strong>. The same model can differ 20× between concurrency 1 and 64 (batching amortises the fixed power draw). We always quote numbers with their load context: baseline as the planning upper bound, loaded as the production lower bound.</td></tr>
+    <tr><td>What's the measurement overhead?</td><td>Near zero: pure scraping of counters DCGM and the engine already expose — no eBPF, no instrumentation, no sampling profiler. The agent is one small Go process per node at millicore CPU.</td></tr>
+    <tr><td>Which engines and hardware?</td><td>Engines: vLLM native; SGLang/Triton/Ollama adapters in review (PR #69/#88); a generic-prometheus adapter for anything exposing a token counter. Hardware: NVIDIA first (DCGM/NVML), an AMD provider exists; per-MIG-slice metering is PR #71.</td></tr>
+    <tr><td>Tensor parallelism? Shared GPUs?</td><td>A TP=k pod holds k GPUs → exactly those k are summed; at TP=1 the other GPUs' idle draw does <strong>not</strong> leak into the numerator (Demo B exists to prove this live). Multiple processes on one GPU can't be split by hardware counters — we degrade to token-proportional sharing, honestly labelled, rather than pretending precision.</td></tr>
+    <tr><td>Can you split prefill vs decode energy?</td><td>No, and it's an explicit non-goal: hardware counters have no notion of phase, so any per-phase energy claim is model-based estimation, not measurement. What we show is that workload <em>shape</em> (read-heavy vs write-heavy) moves aggregate J/token — strictly worded.</td></tr>
+    <tr><td>GPU only? What about CPU/host?</td><td>Today J/token is GPU-only (the dominant share in inference) and documented as such. Host-side energy (RAPL, chassis) is in PR #84 and will add a full-stack figure.</td></tr>
+  </table></div>
+
+  <h3>Adoption and ecosystem</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Q</th><th>A</th></tr>
+    <tr><td>What do I need to deploy it? How fast?</td><td>Any Kubernetes cluster with the NVIDIA device plugin + dcgm-exporter; one Helm command installs the agent (DaemonSet), aggregator and Grafana boards. This 8-model booth went from zero to metering in under a day; a single-cluster trial shows its first J/token within half an hour.</td></tr>
+    <tr><td>How does it become money and carbon? Billing?</td><td>Transparent conversion via site parameters (PUE, tariff, grid intensity) — every figure prints its formula on the dashboard. Namespace-level 30-day chargeback with CSV export feeds internal billing directly.</td></tr>
+    <tr><td>Does it fit my existing observability stack?</td><td>Natively: everything is standard Prometheus metrics (the <code>aitra_*</code> family) — Grafana/Alertmanager/Thanos just work; an OTLP exporter ships windows to an OpenTelemetry Collector too.</td></tr>
+    <tr><td>Is the booth data real?</td><td>All live and measured: the 8× A100 server is right here running eight Qwen3.5/3.6 models — scan the QR, open meter.aitra.ai, and you're watching their wattage now. Grab the console and reshape the load yourself; the curves respond within ~10 seconds.</td></tr>
+    <tr><td>What's on the roadmap?</td><td>Near-term: SGLang/Triton/Ollama adapters, MIG slice metering, host energy, Kepler integration. Mid-term: OTel GenAI energy semantics, efficiency signals for schedulers (llm-d, KAI). Issues are open for adoption.</td></tr>
+  </table></div>
+</section>
+
+<footer>
+  Aitra Meter · KubeCon Japan demo environment · updated 2026-07-24 · every number measured live on the A100 cluster · 中文版: docs/demo/demo-guide.html
+</footer>
+</main>

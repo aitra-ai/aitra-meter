@@ -3,6 +3,8 @@ import { TrendChart } from "@/components/TrendChart";
 import { ChargebackTable } from "@/components/ChargebackTable";
 import { IdleChart } from "@/components/IdleChart";
 import { CarbonCostTable } from "@/components/CarbonCostTable";
+import { MetricsOverview } from "@/components/MetricsOverview";
+import { GrafanaGraphs } from "@/components/GrafanaGraphs";
 
 function Section({
   title,
@@ -39,6 +41,22 @@ export default function HomePage() {
       </div>
 
       <div className="space-y-12">
+        {/* Full metric coverage */}
+        <Section
+          title="All Metrics — Live"
+          description="Every aitra_* signal the meter emits: efficiency, power, utilization, throughput, energy, cost, carbon, and measurement quality"
+        >
+          <MetricsOverview />
+        </Section>
+
+        {/* Graphs — faithful mirror of the provisioned Grafana dashboard */}
+        <Section
+          title="Graphs"
+          description="Faithful mirror of the Grafana Aitra Meter dashboard — same panels, queries, units, and gauge thresholds, live over the last hour"
+        >
+          <GrafanaGraphs />
+        </Section>
+
         {/* View 1 */}
         <Section
           title="J / Token — Live"

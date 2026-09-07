@@ -1,0 +1,60 @@
+# Measurement agent — per-model attribution mode.
+# DaemonSet on GPU nodes. Each agent discovers every GPU-holding pod on its
+# node (kubelet device-plugin checkpoint → pod → GPU UUIDs), scrapes each
+# pod's vLLM /metrics for tokens, differences each pod's own GPUs' energy from
+# the node-local dcgm-exporter, and reports one window per model — so models
+# launched by any platform (csghub/xModeling) appear on the dashboard
+# automatically and disappear when they scale to zero.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: aitra-meter-agent
+  namespace: aitra-system
+  labels:
+    app: aitra-meter-agent
+spec:
+  selector:
+    matchLabels:
+      app: aitra-meter-agent
+  template:
+    metadata:
+      labels:
+        app: aitra-meter-agent
+    spec:
+      serviceAccountName: aitra-meter
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
+      containers:
+        - name: agent
+          image: aitra-meter/measurement-agent:dev
+          imagePullPolicy: Never
+          securityContext:
+            # The kubelet checkpoint dir is root-only (0750 root:root).
+            runAsUser: 0
+          args:
+            - --per-model
+            - --energy-provider=dcgm
+            - --energy-endpoint=http://dcgm-exporter.aitra-system:9400/metrics
+            - --aggregator=aitra-meter-aggregation:9091
+            - --window-seconds=5
+            - --log-level=info
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          volumeMounts:
+            - name: device-plugins
+              mountPath: /var/lib/kubelet/device-plugins
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+      volumes:
+        - name: device-plugins
+          hostPath:
+            path: /var/lib/kubelet/device-plugins

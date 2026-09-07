@@ -1,0 +1,17 @@
+{{- if .Values.grafana.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "aitra-meter.fullname" . }}-grafana-dashboards
+  namespace: {{ include "aitra-meter.namespace" . }}
+  labels:
+    {{- include "aitra-meter.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana-dashboards
+    {{ .Values.grafana.sidecarLabel }}: {{ .Values.grafana.sidecarLabelValue | quote }}
+  {{- with .Values.grafana.folder }}
+  annotations:
+    grafana_folder: {{ . | quote }}
+  {{- end }}
+data:
+  {{- (.Files.Glob "files/grafana-dashboard*.json").AsConfig | nindent 2 }}
+{{- end }}

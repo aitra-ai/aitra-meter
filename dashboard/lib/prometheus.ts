@@ -36,11 +36,13 @@ export interface PrometheusRangeResponse {
 export async function queryPrometheus(
   prometheusUrl: string,
   query: string,
+  headers: Record<string, string> = {},
 ): Promise<PrometheusResult[]> {
   const url = new URL("/api/v1/query", prometheusUrl);
   url.searchParams.set("query", query);
 
   const res = await fetch(url.toString(), {
+    headers,
     next: { revalidate: 0 }, // always fresh
   });
   if (!res.ok) {
@@ -60,6 +62,7 @@ export async function queryPrometheusRange(
   start: number,
   end: number,
   step: string,
+  headers: Record<string, string> = {},
 ): Promise<PrometheusRangeSeries[]> {
   const url = new URL("/api/v1/query_range", prometheusUrl);
   url.searchParams.set("query", query);
@@ -68,6 +71,7 @@ export async function queryPrometheusRange(
   url.searchParams.set("step", step);
 
   const res = await fetch(url.toString(), {
+    headers,
     next: { revalidate: 0 },
   });
   if (!res.ok) {

@@ -52,17 +52,27 @@ func (p *PodMetaLookup) ByNodeAndModel(ctx context.Context, node, modelName stri
 	if err != nil {
 		return aggregation.PodMeta{}, fmt.Errorf("list pods on %s: %w", node, err)
 	}
+	// First pass: exact model-name label match. On nodes serving several
+	// models at once this pins each window to its own pod (and namespace).
 	for i := range list.Items {
 		pod := &list.Items[i]
 		// Always filter client-side — FieldSelector is a server hint, not a guarantee
 		// (fake clients ignore it; some k8s versions don't support all field selectors).
-		if pod.Spec.NodeName != node {
+		if pod.Spec.NodeName != node || pod.Status.Phase != corev1.PodRunning {
 			continue
 		}
-		if pod.Status.Phase != corev1.PodRunning {
+		if modelName != "" && pod.Labels[labelModelName] == modelName {
+			return podToMeta(pod), nil
+		}
+	}
+	// Second pass: pods without the label match any model (single-model nodes
+	// and platform-launched pods that don't carry aitra labels).
+	for i := range list.Items {
+		pod := &list.Items[i]
+		if pod.Spec.NodeName != node || pod.Status.Phase != corev1.PodRunning {
 			continue
 		}
-		if ml := pod.Labels[labelModelName]; ml != "" && ml != modelName {
+		if pod.Labels[labelModelName] != "" {
 			continue
 		}
 		return podToMeta(pod), nil
