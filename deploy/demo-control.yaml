@@ -108,12 +108,15 @@ data:
     }
     # Sweep prompt volume scales with output length so every shape finishes
     # inside the deadline (generate emits 4x the tokens of balanced).
-    SWEEP_FACTOR = {"balanced": 30, "summarize": 40, "generate": 8, "sharegpt": 30}
+    # Sized for H100 throughput: bigger per-step batches + shorter gaps keep
+    # the duty cycle high so fast models don't drain into zero-token display
+    # windows. Concurrency steps themselves are unchanged.
+    SWEEP_FACTOR = {"balanced": 150, "summarize": 200, "generate": 40, "sharegpt": 150}
     SCENES = {
-        "sweep": {"zh": "并发扫描 1→32(约 12 分钟)", "en": "Concurrency sweep 1→32 (~12 min)", "deadline": 2400,
-                  "script": "for C in 1 2 4 8 16 32; do %(bench)s--max-concurrency $C --num-prompts $((C*%(factor)s)); sleep 45; done"},
-        "burst": {"zh": "脉冲流量 ×8(满载 30s/静默 60s)", "en": "Burst ×8 (30 s load / 60 s quiet)", "deadline": 1400,
-                  "script": "for i in 1 2 3 4 5 6 7 8; do %(bench)s--max-concurrency 32 --num-prompts 120; sleep 60; done"},
+        "sweep": {"zh": "并发扫描 1→32(约 20 分钟)", "en": "Concurrency sweep 1→32 (~20 min)", "deadline": 3000,
+                  "script": "for C in 1 2 4 8 16 32; do %(bench)s--max-concurrency $C --num-prompts $((C*%(factor)s)); sleep 15; done"},
+        "burst": {"zh": "脉冲流量 ×8(满载/静默各约 30s)", "en": "Burst ×8 (~30 s load / 30 s quiet)", "deadline": 1400,
+                  "script": "for i in 1 2 3 4 5 6 7 8; do %(bench)s--max-concurrency 32 --num-prompts 600; sleep 30; done"},
     }
 
     # -------- k8s helpers --------
@@ -201,13 +204,16 @@ data:
         svc, mdir = MODELS[model]
         bench = (BASE + SHAPES[shape]["args"]) % {"svc": svc, "model": model, "dir": mdir}
         d = DURATIONS[duration]
+        # num-prompts sized for H100 throughput (concurrency unchanged): bigger
+        # batches mean fewer bench restarts, so the restart gap no longer shows
+        # up as zero-token windows on the dashboard.
         if duration == "forever":
             script = (f"while true; do {bench}--max-concurrency {conc} "
-                      f"--num-prompts {conc*80}; done")
+                      f"--num-prompts {conc*400}; done")
             deadline = d["secs"]
         else:
             script = (f"end=$((SECONDS+{d['secs']})); while [ $SECONDS -lt $end ]; do "
-                      f"{bench}--max-concurrency {conc} --num-prompts {conc*80}; done")
+                      f"{bench}--max-concurrency {conc} --num-prompts {conc*400}; done")
             deadline = d["secs"] + 240
         desc = f"{shape} · c{conc} · {duration}"
         name = f"demo-c{conc}-{shape}-{mdir}-{int(time.time())%100000}".lower().replace(".", "-")

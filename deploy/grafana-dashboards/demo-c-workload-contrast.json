@@ -71,7 +71,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "aitra_j_per_token{model=~\"qwen3.5-9b-summarize|qwen3.5-9b-generate|qwen3.5-9b-chat\"}",
+          "expr": "aitra_j_per_token{model=~\"qwen3.5-9b-summarize|qwen3.5-9b-generate|qwen3.5-9b-chat\",hardware!=\"unknown\"}",
           "legendFormat": "{{model}}",
           "refId": "A"
         }
@@ -126,7 +126,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "max(aitra_j_per_token{model=~\"qwen3.5-9b-summarize|qwen3.5-9b-generate|qwen3.5-9b-chat\"}) / min(aitra_j_per_token{model=~\"qwen3.5-9b-summarize|qwen3.5-9b-generate|qwen3.5-9b-chat\"})",
+          "expr": "max(aitra_j_per_token{model=~\"qwen3.5-9b-summarize|qwen3.5-9b-generate|qwen3.5-9b-chat\",hardware!=\"unknown\"}) / min(aitra_j_per_token{model=~\"qwen3.5-9b-summarize|qwen3.5-9b-generate|qwen3.5-9b-chat\",hardware!=\"unknown\"})",
           "legendFormat": "×",
           "refId": "A"
         }
@@ -196,7 +196,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "aitra_j_per_token{model=\"$sweep_model\"}",
+          "expr": "aitra_j_per_token{model=\"$sweep_model\",hardware!=\"unknown\"}",
           "legendFormat": "{{model}}",
           "refId": "A"
         }
