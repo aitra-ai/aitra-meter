@@ -1,0 +1,88 @@
+# Newest-generation agent model — Qwen3.8-27B-FP8 on one H100.
+# Architecture is Qwen3_5ForConditionalGeneration (qwen3_5), natively supported
+# by vLLM 0.19.x; FP8 weights want Hopper. 64k context for agent workloads.
+# (Qwen3.8-Flash-Next was evaluated and rejected: its qwen4_exp architecture
+# is unsupported by vLLM up to v0.28, and the BF16 repo is 360 GB.)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-agent-38
+  namespace: aitra-system
+  labels:
+    app: vllm-agent-38
+    tier: agent-models
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-agent-38
+  template:
+    metadata:
+      labels:
+        app: vllm-agent-38
+        aitra-ai.github.io/model-name: qwen3.8-27b-agent
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: k8s-master
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.19.0
+          imagePullPolicy: Never
+          args:
+            - --model
+            - /models/q38-27b-fp8
+            - --served-model-name
+            - qwen3.8-27b-agent
+            - --gpu-memory-utilization
+            - "0.90"
+            - --max-model-len
+            - "65536"
+            - --enable-auto-tool-choice
+            - --tool-call-parser
+            - qwen3_xml
+          env:
+            - name: HF_HUB_OFFLINE
+              value: "1"
+            - name: TRANSFORMERS_OFFLINE
+              value: "1"
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 120
+          volumeMounts:
+            - name: shm
+              mountPath: /dev/shm
+            - name: model
+              mountPath: /models
+      volumes:
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi
+        - name: model
+          hostPath:
+            path: /home/aitra-models
+            type: Directory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-agent-38
+  namespace: aitra-system
+  labels:
+    app: vllm-agent-38
+spec:
+  selector:
+    app: vllm-agent-38
+  ports:
+    - port: 8000
+      targetPort: 8000
