@@ -92,6 +92,13 @@ func (l *Loop) ReportWindow(
 			// Per-model agents split power across series; drop the whole-node
 			// series so per-node sums aren't double counted.
 			metrics.GPUPowerWatts.DeleteLabelValues(w.Node, "all")
+		} else {
+			// Residual fell to zero — every GPU is allocated to a model. A
+			// frozen stale idle reading would double-count against the
+			// per-model series (seen live: a 174 W ghost after a model was
+			// scaled back up), so zero it explicitly.
+			metrics.IdlePowerWatts.WithLabelValues(w.Node).Set(0)
+			metrics.GPUPowerWatts.DeleteLabelValues(w.Node, "idle")
 		}
 		return &measurementv1.WindowAck{Accepted: false}, nil
 	}
