@@ -58,7 +58,7 @@ func newTestSpark(base string) *SparkProvider {
 		nameMatch:  defaultNameMatch,
 		include:    splitTokens(defaultRailInclude),
 		exclude:    splitTokens(defaultRailExclude),
-		energyUnit: defaultEnergyUnit, // millijoules
+		energyUnit: "mj", // millijoules
 	})
 }
 
@@ -211,3 +211,48 @@ func TestMicrojouleUnitConfig(t *testing.T) {
 		t.Fatalf("EndWindow = %v J, want 6 (µJ unit)", j)
 	}
 }
+
+// TestSpbmDriverHardwareLayout: matches the exact real-hardware sysfs tree from
+// antheas/spark_hwmon on NVIDIA GB10: chip name "spbm", rails "pkg" (selected),
+// "cpu_e", "cpu_p", and "gpu" (subsets / unselected), with microjoule units.
+func TestSpbmDriverHardwareLayout(t *testing.T) {
+	base := t.TempDir()
+	writeChipName(t, base, "hwmon8", "spbm")
+	writeEnergyRail(t, base, "hwmon8", 1, "pkg", 1_427_857_079_000)
+	writeEnergyRail(t, base, "hwmon8", 2, "cpu_e", 102_787_461_000)
+	writeEnergyRail(t, base, "hwmon8", 3, "cpu_p", 859_482_136_000)
+	writeEnergyRail(t, base, "hwmon8", 4, "gpu", 2_690_748_623_000)
+
+	p := newSpark(sparkConfig{
+		base:       base,
+		nameMatch:  defaultNameMatch,
+		include:    splitTokens(defaultRailInclude),
+		exclude:    splitTokens(defaultRailExclude),
+		energyUnit: defaultEnergyUnit,
+	})
+	if !p.Available(context.Background()) {
+		t.Fatalf("expected available for spbm, got: %s", p.unavailReason)
+	}
+	domains, err := p.Domains(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(domains) != 1 || domains[0].ID != "pkg" {
+		t.Fatalf("want 1 host rail (pkg), got: %+v", domains)
+	}
+
+	ctx := context.Background()
+	if err := p.BeginWindow(ctx, "w1"); err != nil {
+		t.Fatal(err)
+	}
+	// Advance pkg by +25_000_000 µJ = 25 J.
+	setCounter(t, base, "hwmon8", 1, 1_427_857_079_000+25_000_000)
+	j, err := p.EndWindow(ctx, "w1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if j < 24.999 || j > 25.001 {
+		t.Fatalf("EndWindow = %v J, want 25", j)
+	}
+}
+

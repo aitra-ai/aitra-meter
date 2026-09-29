@@ -57,24 +57,23 @@ const (
 	defaultBasePath = "/sys/class/hwmon"
 
 	// defaultNameMatch is matched (case-insensitive substring) against each
-	// hwmon device's "name" file to locate the chip spark_hwmon registers. The
-	// exact string is not yet confirmed on hardware; it is configurable via the
-	// "name" config key precisely so it can be corrected without a code change.
-	defaultNameMatch = "spark"
+	// hwmon device's "name" file to locate the chip spark_hwmon registers.
+	// Defaults to "spark,spbm" to match both the driver name ("spbm") and
+	// early prototype conventions ("spark").
+	defaultNameMatch = "spark,spbm"
 
 	// defaultRailInclude / defaultRailExclude select which energy rails constitute
-	// HOST energy. We sum the top-level package rail plus a DRAM-equivalent rail if
-	// one is exposed separately, and exclude per-core subsets (CPU performance /
-	// efficiency cores) which are already contained in the package rail — including
-	// them would double-count, exactly as core/uncore are excluded in RAPL.
-	defaultRailInclude = "package,dram,mem"
+	// HOST energy. We sum the top-level package rail (named "pkg" in spark_hwmon,
+	// or "package" in early specs) plus a DRAM-equivalent rail if exposed separately,
+	// and exclude per-core subsets (cpu_e, cpu_p, core) which are already contained
+	// in the package rail.
+	defaultRailInclude = "pkg,package,dram,mem"
 	defaultRailExclude = "core"
 
 	// defaultEnergyUnit governs the divisor from the raw counter to joules. The
-	// spark_hwmon accumulator is documented in millijoules; standard hwmon energy
-	// is microjoules. Because the ABI is in flux this is configurable ("mj" | "uj")
-	// so an operator can correct the scale on hardware without a rebuild.
-	defaultEnergyUnit = "mj"
+	// SPBM driver multiplies firmware mJ by 1000 to standard Linux hwmon microjoules
+	// (uJ); unit is configurable ("mj" | "uj") to support both scales.
+	defaultEnergyUnit = "uj"
 )
 
 func init() {
@@ -141,12 +140,12 @@ func discover(cfg sparkConfig) ([]sparkRail, string) {
 		return nil, fmt.Sprintf("no hwmon devices under %s (spark_hwmon driver not loaded)", cfg.base)
 	}
 
-	nameMatch := strings.ToLower(cfg.nameMatch)
+	nameTokens := splitTokens(cfg.nameMatch)
 	chipFound := false
 	var rails []sparkRail
 	for _, h := range hwmons {
 		name, err := readTrim(filepath.Join(h, "name"))
-		if err != nil || !strings.Contains(strings.ToLower(name), nameMatch) {
+		if err != nil || !matchAny(name, nameTokens) {
 			continue
 		}
 		chipFound = true
@@ -348,6 +347,16 @@ func splitTokens(s string) []string {
 		}
 	}
 	return out
+}
+
+func matchAny(s string, tokens []string) bool {
+	l := strings.ToLower(s)
+	for _, t := range tokens {
+		if t != "" && strings.Contains(l, t) {
+			return true
+		}
+	}
+	return false
 }
 
 func readTrim(path string) (string, error) {

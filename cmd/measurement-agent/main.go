@@ -20,6 +20,7 @@ import (
 	// Import providers to trigger their init() registration.
 	_ "github.com/aitra-ai/aitra-meter/internal/provider/energy/amd"
 	_ "github.com/aitra-ai/aitra-meter/internal/provider/energy/dcgm"
+	_ "github.com/aitra-ai/aitra-meter/internal/provider/energy/nvml"
 	_ "github.com/aitra-ai/aitra-meter/internal/provider/energy/zeus"
 	_ "github.com/aitra-ai/aitra-meter/internal/provider/hostenergy/gracehwmon"
 	_ "github.com/aitra-ai/aitra-meter/internal/provider/hostenergy/gracespark"
@@ -32,6 +33,10 @@ func main() {
 	energyType := flag.String("energy-provider", "nvml", "Energy provider: nvml | amd | zeus | dcgm")
 	hostEnergyType := flag.String("host-energy-provider", "none", "Host (non-accelerator) energy provider: none | rapl | grace-hwmon | grace-spark-hwmon (experimental)")
 	hostEnergyPath := flag.String("host-energy-path", "", "Override the host energy sysfs base path (e.g. /host/sys/class/powercap — container runtimes mask the default /sys/devices/virtual/powercap as a RAPL side-channel mitigation, so an unprivileged agent must read a re-mounted copy)")
+	hostEnergyName := flag.String("host-energy-name", "", "Override the host energy hwmon chip name match (e.g. spbm, spark; defaults to provider default)")
+	hostEnergyRails := flag.String("host-energy-rails", "", "Comma-separated rail names to include in host energy (defaults to provider default)")
+	hostEnergyExclude := flag.String("host-energy-exclude", "", "Comma-separated rail names to exclude from host energy (defaults to provider default)")
+	hostEnergyUnit := flag.String("host-energy-unit", "", "Host energy counter unit: mj | uj (defaults to provider default)")
 	inferenceType := flag.String("inference-provider", "vllm", "Inference provider: vllm | generic-prometheus")
 	aggregatorAddr := flag.String("aggregator", "aitra-meter-aggregation:9091", "Aggregation service gRPC address")
 	nodeName := flag.String("node", "", "Kubernetes node name (defaults to NODE_NAME env var)")
@@ -83,6 +88,18 @@ func main() {
 	hostEnergyConfig := map[string]string{}
 	if *hostEnergyPath != "" {
 		hostEnergyConfig["path"] = *hostEnergyPath
+	}
+	if *hostEnergyName != "" {
+		hostEnergyConfig["name"] = *hostEnergyName
+	}
+	if *hostEnergyRails != "" {
+		hostEnergyConfig["rails"] = *hostEnergyRails
+	}
+	if *hostEnergyExclude != "" {
+		hostEnergyConfig["exclude"] = *hostEnergyExclude
+	}
+	if *hostEnergyUnit != "" {
+		hostEnergyConfig["energy_unit"] = *hostEnergyUnit
 	}
 	hostEnergyProvider, err := provider.NewHostEnergy(*hostEnergyType, hostEnergyConfig)
 	if err != nil {

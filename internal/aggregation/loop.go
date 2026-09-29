@@ -129,6 +129,13 @@ func (l *Loop) ReportWindow(
 				metrics.GPUPowerWatts.DeleteLabelValues(w.Node, "all")
 			}
 		}
+		if w.HostEnergyJoules != nil {
+			hp := w.HostProvider
+			metrics.HostEnergyJoulesTotal.WithLabelValues(w.Node, hp, "all").Add(*w.HostEnergyJoules)
+			if w.HostPowerWatts != nil {
+				metrics.HostPowerWatts.WithLabelValues(w.Node, hp).Set(*w.HostPowerWatts)
+			}
+		}
 		// A quiet model's efficiency gauges read zero rather than freezing at
 		// the last serving window's value — dashboards must reflect the
 		// current state, and the boundary window when traffic stops is
