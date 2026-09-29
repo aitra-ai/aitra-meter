@@ -32,6 +32,7 @@ func init() {
 			outputTokensMetric:    orDefault(config["output_tokens_metric"], "inference_output_tokens_total"),
 			requestsRunningMetric: orDefault(config["requests_running_metric"], "inference_requests_running"),
 			modelNameLabel:        orDefault(config["model_name_label"], "model_name"),
+			modelName:             config["model_name"],
 			client:                &http.Client{Timeout: 10 * time.Second},
 		}, nil
 	})
@@ -44,6 +45,7 @@ type GenericPrometheusProvider struct {
 	outputTokensMetric    string
 	requestsRunningMetric string
 	modelNameLabel        string
+	modelName             string
 	client                *http.Client
 }
 
@@ -83,6 +85,9 @@ func (g *GenericPrometheusProvider) RequestsRunning(ctx context.Context) (int, e
 // than one model and its energy cannot be attributed to a single one; that is
 // reported rather than silently resolved.
 func (g *GenericPrometheusProvider) ModelName(ctx context.Context) (string, error) {
+	if g.modelName != "" {
+		return g.modelName, nil
+	}
 	series, err := g.scrape(ctx)
 	if err != nil {
 		return "", err
