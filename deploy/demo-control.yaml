@@ -27,13 +27,15 @@ rules:
   - apiGroups: ["batch"]
     resources: ["jobs"]
     verbs: ["create", "get", "list", "delete"]
+  # Rack view (drag-a-model-onto-a-GPU): the console reads each fleet
+  # deployment's replica state and scales it 0/1. Named deployments only.
   - apiGroups: ["apps"]
     resources: ["deployments"]
-    resourceNames: ["vllm-fleet-loadgen"]
+    resourceNames: ["vllm-fleet-loadgen", "vllm-q35-0p8b", "vllm-q35-2b", "vllm-q35-4b", "vllm-q35-9b", "vllm-q36-27b", "vllm-q36-27b-fp8", "vllm-q36-35b-fp8", "vllm-q35-122b-int4"]
     verbs: ["get"]
   - apiGroups: ["apps"]
     resources: ["deployments/scale"]
-    resourceNames: ["vllm-fleet-loadgen"]
+    resourceNames: ["vllm-fleet-loadgen", "vllm-q35-0p8b", "vllm-q35-2b", "vllm-q35-4b", "vllm-q35-9b", "vllm-q36-27b", "vllm-q36-27b-fp8", "vllm-q36-35b-fp8", "vllm-q35-122b-int4"]
     verbs: ["get", "update", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -52,6 +54,9 @@ subjects:
 ---
 apiVersion: v1
 kind: ConfigMap
+# NOTE: canonical console source lives in demos/console/ — regenerate this
+# ConfigMap from those files (kubectl create configmap demo-control-app
+# --from-file=demos/console/app.py --from-file=demos/console/index.html).
 metadata:
   name: demo-control-app
   namespace: aitra-system
