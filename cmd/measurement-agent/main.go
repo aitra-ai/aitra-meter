@@ -38,6 +38,10 @@ func main() {
 	hostEnergyExclude := flag.String("host-energy-exclude", "", "Comma-separated rail names to exclude from host energy (defaults to provider default)")
 	hostEnergyUnit := flag.String("host-energy-unit", "", "Host energy counter unit: mj | uj (defaults to provider default)")
 	inferenceType := flag.String("inference-provider", "vllm", "Inference provider: vllm | generic-prometheus")
+	outputTokensMetric := flag.String("output-tokens-metric", "", "Metric name for cumulative output tokens (generic-prometheus)")
+	requestsRunningMetric := flag.String("requests-running-metric", "", "Metric name for in-flight requests (generic-prometheus)")
+	modelNameLabel := flag.String("model-name-label", "", "Label name for model identification (generic-prometheus)")
+	modelName := flag.String("model-name", "", "Model name override (generic-prometheus)")
 	aggregatorAddr := flag.String("aggregator", "aitra-meter-aggregation:9091", "Aggregation service gRPC address")
 	nodeName := flag.String("node", "", "Kubernetes node name (defaults to NODE_NAME env var)")
 	windowSecs := flag.Int("window-seconds", 30, "Measurement window duration in seconds")
@@ -149,6 +153,18 @@ func main() {
 	inferenceConfig := map[string]string{}
 	if *inferenceEndpoint != "" {
 		inferenceConfig["endpoint"] = *inferenceEndpoint
+	}
+	if *outputTokensMetric != "" {
+		inferenceConfig["output_tokens_metric"] = *outputTokensMetric
+	}
+	if *requestsRunningMetric != "" {
+		inferenceConfig["requests_running_metric"] = *requestsRunningMetric
+	}
+	if *modelNameLabel != "" {
+		inferenceConfig["model_name_label"] = *modelNameLabel
+	}
+	if *modelName != "" {
+		inferenceConfig["model_name"] = *modelName
 	}
 	inferenceProvider, err := provider.NewInference(*inferenceType, inferenceConfig)
 	if err != nil {

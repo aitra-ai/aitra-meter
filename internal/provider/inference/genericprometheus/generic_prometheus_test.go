@@ -160,3 +160,17 @@ func TestOrDefault(t *testing.T) {
 		t.Error("non-empty string should return itself")
 	}
 }
+
+func TestStaticModelNameOverride(t *testing.T) {
+	p := &GenericPrometheusProvider{
+		endpoint:  serveMetrics(t, "# empty\n"),
+		modelName: "samantha-mistral-7b",
+	}
+	got, err := p.ModelName(context.Background())
+	if err != nil {
+		t.Fatalf("ModelName: %v", err)
+	}
+	if got != "samantha-mistral-7b" {
+		t.Errorf("got %q, want %q", got, "samantha-mistral-7b")
+	}
+}
