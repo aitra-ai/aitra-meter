@@ -2,8 +2,9 @@
 
 Aitra Meter reads GPU energy through a pluggable provider. The provider is
 selected by the `energyProvider.type` Helm value or the `--energy-provider`
-flag. Two providers ship with Aitra Meter. Both use the GPU vendor's
-recommended API directly.
+flag. The vendor-native providers (`nvml`, `amd`) use the GPU vendor's
+recommended API directly; `kepler` reads container-level energy from an
+existing Kepler deployment instead.
 
 ## nvml — NVIDIA GPUs (default)
 
@@ -67,6 +68,64 @@ measurementAgent:
 
 ```bash
 --energy-provider=amd
+```
+
+---
+
+## kepler — Kepler pod/container energy (eBPF)
+
+Reads pod and container energy from
+[Kepler](https://github.com/sustainable-computing-io/kepler), a CNCF project
+that attributes node energy (CPU, DRAM, GPU) to containers via eBPF. Useful
+when Kepler is already deployed and NVML access is restricted, when CPU and
+DRAM attribution is needed alongside GPU energy, or when the cluster mixes GPU
+and CPU inference nodes. On NVIDIA GPU nodes where both are available, prefer
+`nvml` — it reads the hardware energy counter directly, with no
+scrape-interval lag. See the [Kepler integration guide](kepler-integration.md)
+for a full walkthrough.
+
+**Hardware:** any node where Kepler is deployed — GPU or CPU.
+
+**Runtime requirement:** Kepler installed in the cluster and
+`kepler_container_joules_total` present in Prometheus. No library is required
+on the GPU node itself. The provider is pure Go — no CGO, no build tag.
+
+**What it reads:** `kepler_container_joules_total` — Kepler's cumulative
+per-container energy counter in joules — over HTTP. Two reads per measurement
+window (at `BeginWindow` and `EndWindow`); the counter delta is the energy
+consumed. When `endpoint` is a bare Prometheus base URL, the provider reads
+through the Prometheus
+[federation](https://prometheus.io/docs/prometheus/latest/federation/)
+endpoint; when `endpoint` includes a path (for example a node-local Kepler
+exporter `/metrics` URL), that URL is scraped as-is.
+`kepler_node_package_joules_total` supplies the idle-power fallback.
+Resolution is bounded by the Kepler/Prometheus scrape interval, so set
+`scrape_interval` to match your deployment.
+
+**Config keys** (`energyProvider.config`):
+
+| Key | Default | Description |
+|---|---|---|
+| `endpoint` | required | Prometheus base URL, or a direct text-exposition URL |
+| `container_label` | `container` | Label key used to filter container series (some Kepler releases emit `container_name`) |
+| `container_name` | unset | When set, only series whose `container_label` equals this value are summed; when unset, all container series are summed |
+| `scrape_interval` | `30s` | How often the underlying counters advance; also the minimum spacing between idle-power samples |
+
+**Helm:**
+
+```yaml
+measurementAgent:
+  energyProvider:
+    type: kepler
+    config:
+      endpoint: "http://prometheus-operated.monitoring.svc.cluster.local:9090"
+      container_label: "container"
+```
+
+**CLI:**
+
+```bash
+--energy-provider=kepler --energy-endpoint=http://prometheus-operated.monitoring.svc.cluster.local:9090
 ```
 
 ---
