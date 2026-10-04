@@ -42,6 +42,7 @@ func main() {
 	gridGCO2 := flag.Float64("grid-gco2-per-kwh", envFloat("GRID_GCO2_PER_KWH", 0), "Grid carbon intensity gCO2/kWh for carbon derivation (0 = off)")
 	carbonSource := flag.String("carbon-source", envStr("CARBON_SOURCE", "manual"), "carbon_source metric label")
 	costSource := flag.String("cost-source", envStr("COST_SOURCE", "manual"), "cost_source metric label")
+	staticHwLabel := flag.String("static-hardware-label", envStr("STATIC_HARDWARE_LABEL", "unknown"), "Hardware label reported for all nodes in standalone mode (no Kubernetes)")
 	flag.Parse()
 
 	if *clusterName == "" {
@@ -82,17 +83,30 @@ func main() {
 	defer backend.Close() //nolint:errcheck
 
 	// --- Kubernetes client -------------------------------------------------
+	// Optional: without a cluster (standalone / docker-compose deployments)
+	// the service falls back to static lookups — pod metadata resolves to
+	// "unknown" and every node reports --static-hardware-label.
 	k8sClient, err := buildK8sClient(*kubeconfig)
+	var podMeta aggregation.PodLookup
+	var nodeHw aggregation.NodeHardware
 	if err != nil {
-		log.Fatal("kubernetes client init failed", zap.Error(err))
+		log.Warn("kubernetes unavailable — running standalone with static lookups",
+			zap.Error(err),
+			zap.String("static_hardware_label", *staticHwLabel),
+		)
+		podMeta = k8slookup.NewStaticPodMetaLookup(nil)
+		nodeHw = k8slookup.NewStaticNodeHardware(*staticHwLabel)
+	} else {
+		podMeta = k8slookup.NewPodMetaLookup(k8sClient)
+		nodeHw = k8slookup.NewNodeHardwareLookup(k8sClient)
 	}
 
 	// --- aggregation loop --------------------------------------------------
 	loop := aggregation.NewLoop(
 		*clusterName,
-		aggregation.NewResolver(k8slookup.NewPodMetaLookup(k8sClient), aggregation.PolicyConfig{}),
+		aggregation.NewResolver(podMeta, aggregation.PolicyConfig{}),
 		aggregation.NewCalibrationTableFromMap(nil),
-		k8slookup.NewNodeHardwareLookup(k8sClient),
+		nodeHw,
 		backend,
 		aggregation.SiteParams{
 			ElectricityCostPerKWh: *costPerKWh,

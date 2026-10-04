@@ -204,6 +204,51 @@ func TestLoopHostEnergyAbsentIsNotZero(t *testing.T) {
 	}
 }
 
+// TestLoopHostEnergyDuringIdle verifies that an idle window (0 output tokens)
+// still records HostPowerWatts and HostEnergyJoulesTotal if host energy is present.
+func TestLoopHostEnergyDuringIdle(t *testing.T) {
+	loop, _ := newTestLoop(nil, PolicyConfig{}, nil)
+	w := baseReport()
+	w.Node = "node-host-idle"
+	w.OutputTokens = 0
+	w.ModelName = ""
+	hostJ := 125.0
+	hostW := 25.0
+	w.HostEnergyJoules = &hostJ
+	w.HostPowerWatts = &hostW
+	w.HostProvider = "grace-spark-hwmon"
+
+	ack, err := loop.ReportWindow(context.Background(), w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ack.Accepted {
+		t.Fatal("expected Accepted=false for zero-token window")
+	}
+
+	found, got := gatheredSample(t, "aitra_host_power_watts", map[string]string{
+		"node": "node-host-idle", "provider": "grace-spark-hwmon",
+	})
+	if !found {
+		t.Fatal("aitra_host_power_watts must be emitted during idle window when host telemetry present")
+	}
+	if math.Abs(got-hostW) > 1e-9 {
+		t.Fatalf("aitra_host_power_watts = %v, want %v", got, hostW)
+	}
+
+	found, got = gatheredSample(t, "aitra_host_energy_joules_total", map[string]string{
+		"node": "node-host-idle", "provider": "grace-spark-hwmon", "domain": "all",
+	})
+	if !found || got < hostJ {
+		t.Fatalf("aitra_host_energy_joules_total found=%v got=%v want >= %v", found, got, hostJ)
+	}
+
+	// J/token metrics must NOT be emitted during idle (no tokens).
+	if found, v := gatheredSample(t, "aitra_system_j_per_token", map[string]string{"node": "node-host-idle"}); found {
+		t.Fatalf("aitra_system_j_per_token emitted (%v) during idle — must be absent", v)
+	}
+}
+
 // --- tests ------------------------------------------------------------------
 
 func TestLoopJPerTokenArithmetic(t *testing.T) {
