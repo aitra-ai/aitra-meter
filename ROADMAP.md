@@ -22,7 +22,7 @@ Shipped on `main` (latest tag v0.2.4 plus unreleased items — see the [changelo
 
 ## Current focus
 
-- Hardware validation on H100 SXM5 at XFusion Singapore Open Lab
+- Hardware validation on H100 SXM5
 - GPU CI runner registration for continuous hardware validation
 - Live demo environment ahead of KubeCon + CloudNativeCon Japan, July 2026
 - Draft PR against `open-telemetry/semantic-conventions` proposing `gen_ai.infrastructure.energy.*`
