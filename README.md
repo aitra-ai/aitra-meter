@@ -184,7 +184,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for full guidance.
 
 ## Project status
 
-Single-cluster measurement is complete as of the v0.2.x series: measurement agent with NVML (default), AMD, Zeus, and DCGM energy providers; aggregation service with CV gating, attribution, and calibration; six-view dashboard; Helm chart; pre-built Grafana dashboard; opt-in OTLP export. Hardware validation on H100 SXM5 at the XFusion Singapore Open Lab is in progress.
+Single-cluster measurement is complete as of the v0.2.x series: measurement agent with NVML (default), AMD, Zeus, and DCGM energy providers; aggregation service with CV gating, attribution, and calibration; six-view dashboard; Helm chart; pre-built Grafana dashboard; opt-in OTLP export.
 
 This project follows semantic versioning. Pre-1.0 minor versions may include interface changes — see the [changelog](CHANGELOG.md) and [roadmap](ROADMAP.md).
 
