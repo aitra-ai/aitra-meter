@@ -71,7 +71,8 @@ func tierPriority(t CalibrationTier) int {
 		return 1
 	case TierSelfCalibrated:
 		return 2
-	default:
+	case TierUncalibrated:
 		return 3
 	}
+	return 3 // unreachable; satisfies the compiler and future-proofs new tiers
 }
