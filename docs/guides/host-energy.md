@@ -43,7 +43,7 @@ than a component, so it survives non-x86 hardware and board-level paths
 |---|---|---|---|
 | x86 (Intel, AMD) | `rapl` | `/sys/class/powercap/intel-rapl:*/energy_uj` | Supported |
 | Grace Superchip (72-core) | `grace-hwmon` | hwmon `power1_average` / `power1_oem_info` | Supported |
-| GB10 / DGX Spark | `grace-spark-hwmon` | hwmon `energyN_input` via community `antheas/spark_hwmon` | **Experimental — community driver, opt-in** |
+| GB10 / DGX Spark | `grace-spark-hwmon` | hwmon `energyN_input` via community [`RollingTheRock/spbm-hwmon`](https://github.com/RollingTheRock/spbm-hwmon) (or `antheas/spark_hwmon`) | **Experimental — community driver, opt-in** |
 | GB10 / DGX Spark, driver absent | — | none | Unavailable (not zero) |
 | Server-class, any arch | `redfish` | BMC | Future |
 | Default | `none` | Noop (metrics omitted) | Supported |
@@ -120,8 +120,13 @@ is malformed or goes backwards, is reported as unavailable, never as zero.
 
 **Status: experimental, community-dependency, off by default.** Distinct from
 `grace-hwmon` (the 72-core Superchip) because the sysfs surface and the caveats
-differ. Enable only on a GB10 where you have installed the `antheas/spark_hwmon`
-driver yourself.
+differ. Enable only on a GB10 where you have installed an out-of-tree SPBM kernel
+driver yourself. The hardened driver [`RollingTheRock/spbm-hwmon`](https://github.com/RollingTheRock/spbm-hwmon)
+is recommended (v0.0.1+): it unwraps 32-bit hardware accumulators into 64-bit monotonic
+microjoules (eliminating the ~11.9h rollover cliff under 100W load), guards against
+firmware reset discontinuities, enforces MMIO bounds checking, and exposes thermal
+throttling via standard `temp1_crit_alarm`. The earlier prototype driver
+`antheas/spark_hwmon` remains compatible.
 
 The driver reads the Spark's System Power Budget Manager (SPBM) shared memory —
 updated by the MediaTek SSPM firmware — and presents it through ordinary hwmon
