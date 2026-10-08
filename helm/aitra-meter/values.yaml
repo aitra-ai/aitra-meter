@@ -68,8 +68,9 @@ measurementAgent:
   #   grace-hwmon        Grace Superchip (72-core). Reads hwmon power rails.
   #   grace-spark-hwmon  EXPERIMENTAL. NVIDIA GB10 / DGX Spark only. Reads the
   #                      cumulative energy accumulator exposed by the community
-  #                      antheas/spark_hwmon kernel driver. Aitra does NOT install,
-  #                      sign, or manage that driver — the operator must install it
+  #                      SPBM kernel driver (recommended: RollingTheRock/spbm-hwmon,
+  #                      or antheas/spark_hwmon). Aitra does NOT install, sign, or
+  #                      manage that driver — the operator must install it
   #                      (DKMS + MOK under Secure Boot) and keep firmware current.
   #                      Driver absent -> host metrics are omitted (never zeroed).
   #                      Readings carry provider="grace-spark-hwmon" so they can be
