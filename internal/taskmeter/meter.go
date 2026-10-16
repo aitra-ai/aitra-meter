@@ -91,7 +91,9 @@ type Meter struct {
 
 type taskState struct {
 	Task
-	byModel map[string]*ModelUsage
+	byModel          map[string]*ModelUsage
+	promSystemJoules float64
+	hostJoules       float64
 }
 
 // New creates a Meter reading efficiencies from src.
@@ -134,7 +136,12 @@ func (m *Meter) Record(taskID, model string, promptTokens, outputTokens uint64) 
 	st.PromptTokens += promptTokens
 	st.OutputTokens += outputTokens
 	st.GPUJoules += c.GPUJoules
-	st.SystemJoules += c.SystemJoules
+	st.promSystemJoules += c.SystemJoules
+	if st.promSystemJoules > 0 {
+		st.SystemJoules = st.promSystemJoules + st.hostJoules
+	} else if st.hostJoules > 0 {
+		st.SystemJoules = st.GPUJoules + st.hostJoules
+	}
 
 	mu, ok := st.byModel[model]
 	if !ok {
@@ -201,4 +208,29 @@ func (m *Meter) List() []Task {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].LastActivity.After(out[j].LastActivity) })
 	return out
+}
+
+// AddHostEnergy adds attributed host/CPU dynamic joules to a task's energy bill.
+func (m *Meter) AddHostEnergy(taskID string, cpuJoules float64) {
+	if m == nil || cpuJoules <= 0 {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	st, ok := m.tasks[taskID]
+	if !ok {
+		now := time.Now()
+		st = &taskState{
+			Task:    Task{ID: taskID, StartedAt: now, LastActivity: now, Attribution: "token-share+host-attribution"},
+			byModel: make(map[string]*ModelUsage),
+		}
+		m.tasks[taskID] = st
+	}
+	st.hostJoules += cpuJoules
+	st.Attribution = "token-share+host-attribution"
+	if st.promSystemJoules > 0 {
+		st.SystemJoules = st.promSystemJoules + st.hostJoules
+	} else {
+		st.SystemJoules = st.GPUJoules + st.hostJoules
+	}
 }

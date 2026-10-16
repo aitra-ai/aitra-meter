@@ -22,6 +22,10 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/aitra-ai/aitra-meter/internal/provider"
+	_ "github.com/aitra-ai/aitra-meter/internal/provider/hostenergy/gracehwmon"
+	_ "github.com/aitra-ai/aitra-meter/internal/provider/hostenergy/gracespark"
+	_ "github.com/aitra-ai/aitra-meter/internal/provider/hostenergy/rapl"
 	"github.com/aitra-ai/aitra-meter/internal/taskmeter"
 )
 
@@ -32,6 +36,8 @@ func main() {
 	defaultBackend := flag.String("default-backend", "", "Upstream for models not in --backends (e.g. a platform gateway that does its own routing); empty rejects unknown models")
 	costPerKWh := flag.Float64("cost-per-kwh", 0, "Electricity cost in USD/kWh; 0 omits cost lines")
 	gco2PerKWh := flag.Float64("gco2-per-kwh", 0, "Grid intensity in gCO2/kWh; 0 omits carbon lines")
+	hostProvider := flag.String("host-provider", "", "Host energy provider: grace-spark-hwmon | grace-hwmon | rapl | auto (empty disables host CPU attribution)")
+	hwmonPath := flag.String("hwmon-path", "/sys/class/hwmon", "Path for hwmon devices")
 	logLevel := flag.String("log-level", "info", "Log level: debug | info | warn | error")
 	flag.Parse()
 
@@ -60,6 +66,31 @@ func main() {
 	meter.CostPerKWh = *costPerKWh
 	meter.GCO2PerKWh = *gco2PerKWh
 
+	var tracker *taskmeter.HostTracker
+	if *hostProvider != "" {
+		providerName := *hostProvider
+		if providerName == "auto" {
+			providerName = "grace-spark-hwmon"
+		}
+		p, err := provider.NewHostEnergy(providerName, map[string]string{
+			"path": *hwmonPath,
+		})
+		if err != nil {
+			log.Warn("host energy provider initialization failed",
+				zap.String("provider", providerName),
+				zap.Error(err),
+			)
+		} else if !p.Available(ctx) {
+			log.Warn("host energy provider not available on this hardware",
+				zap.String("provider", providerName),
+			)
+		} else {
+			tracker = taskmeter.NewHostTracker(p)
+			log.Info("host CPU energy attribution enabled", zap.String("provider", p.Name()))
+		}
+	}
+	cpuHandler := taskmeter.NewCPUHandler(tracker, meter, log)
+
 	proxy := &taskmeter.Proxy{Meter: meter, Backends: routes, DefaultBackend: defURL, Log: log}
 
 	mux := http.NewServeMux()
@@ -69,8 +100,18 @@ func main() {
 		writeJSON(w, meter.List())
 	})
 	mux.HandleFunc("/tasks/", func(w http.ResponseWriter, r *http.Request) {
-		id := strings.TrimPrefix(r.URL.Path, "/tasks/")
-		t, ok := meter.Get(id)
+		sub := strings.TrimPrefix(r.URL.Path, "/tasks/")
+		if strings.HasSuffix(sub, "/cpu/start") {
+			taskID := strings.TrimSuffix(sub, "/cpu/start")
+			cpuHandler.HandleStart(w, r, taskID)
+			return
+		}
+		if strings.HasSuffix(sub, "/cpu/stop") {
+			taskID := strings.TrimSuffix(sub, "/cpu/stop")
+			cpuHandler.HandleStop(w, r, taskID)
+			return
+		}
+		t, ok := meter.Get(sub)
 		if !ok {
 			http.Error(w, `{"error":"unknown task"}`, http.StatusNotFound)
 			return
