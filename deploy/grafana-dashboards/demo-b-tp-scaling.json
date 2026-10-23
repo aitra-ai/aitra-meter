@@ -56,7 +56,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "aitra_j_per_token{model=\"qwen3.6-27b-tp\"}",
+          "expr": "aitra_j_per_token{model=\"qwen3.6-27b-tp\",hardware!=\"unknown\"}",
           "legendFormat": "J/token",
           "refId": "A"
         }
@@ -223,7 +223,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "aitra_j_per_token{model=\"qwen3.6-27b-tp\"}",
+          "expr": "aitra_j_per_token{model=\"qwen3.6-27b-tp\",hardware!=\"unknown\"}",
           "legendFormat": "J/token @ TP",
           "refId": "A"
         }
