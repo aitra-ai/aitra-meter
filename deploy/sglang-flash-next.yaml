@@ -1,0 +1,114 @@
+# Qwen3.8-Flash-Next-FP8 on 4×H100 via SGLang (day-0 image).
+# Flags mirror the official cookbook TP=4 recipe; H100 adjustments:
+# --context-length 32768 caps the 262k default so the hybrid GDN/QSA caches
+# fit 80GB HBM (recipe validates on H200/141GB). Unvalidated-hardware risk is
+# accepted deliberately — H100 is the same sm_90 as H200.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sglang-flash-next
+  namespace: aitra-system
+  labels:
+    app: sglang-flash-next
+    tier: agent-models
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sglang-flash-next
+  template:
+    metadata:
+      labels:
+        app: sglang-flash-next
+        aitra-ai.github.io/model-name: qwen3.8-flash-next
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: k8s-master
+      containers:
+        - name: sglang
+          image: docker.m.daocloud.io/lmsysorg/sglang:qwen38flashnext
+          imagePullPolicy: IfNotPresent
+          command: ["sglang", "serve"]
+          args:
+            - --model-path
+            - /models/q38-flash-next-fp8
+            - --served-model-name
+            - qwen3.8-flash-next
+            - --tp
+            - "4"
+            - --mem-fraction-static
+            - "0.85"
+            - --context-length
+            - "32768"
+            - --chunked-prefill-size
+            - "8192"
+            - --linear-attn-prefill-backend
+            - flashinfer
+            - --linear-attn-decode-backend
+            - flashinfer
+            - --linear-attn-verify-backend
+            - triton
+            - --mamba-ssm-dtype
+            - bfloat16
+            - --speculative-algorithm
+            - NEXTN
+            - --speculative-num-steps
+            - "3"
+            - --speculative-eagle-topk
+            - "1"
+            - --speculative-num-draft-tokens
+            - "4"
+            - --max-running-requests
+            - "48"
+            - --reasoning-parser
+            - auto
+            - --tool-call-parser
+            - auto
+            - --host
+            - 0.0.0.0
+            - --port
+            - "8000"
+          env:
+            - name: HF_HUB_OFFLINE
+              value: "1"
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            limits:
+              nvidia.com/gpu: 4
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            failureThreshold: 160
+          volumeMounts:
+            - name: shm
+              mountPath: /dev/shm
+            - name: model
+              mountPath: /models
+      volumes:
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 32Gi
+        - name: model
+          hostPath:
+            path: /home/aitra-models
+            type: Directory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sglang-flash-next
+  namespace: aitra-system
+  labels:
+    app: sglang-flash-next
+spec:
+  selector:
+    app: sglang-flash-next
+  ports:
+    - port: 8000
+      targetPort: 8000
