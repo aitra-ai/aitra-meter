@@ -597,6 +597,14 @@ func TestLoopClusterJPerTokenIsSumOfEnergyDividedBySumOfTokens(t *testing.T) {
 	if math.Abs(wantCluster-avgOfRatios) < 1e-9 {
 		t.Fatal("test setup error: Σenergy/Σtokens and avg-of-ratios must differ")
 	}
+
+	// The aitra_cluster_j_per_token gauge must carry the same aggregate.
+	gauge := testutil.ToFloat64(metrics.ClusterJPerToken.WithLabelValues(
+		"test-cluster", string(TierUncalibrated),
+	))
+	if math.Abs(gauge-wantCluster) > 1e-9 {
+		t.Errorf("aitra_cluster_j_per_token = %f, want %f", gauge, wantCluster)
+	}
 }
 
 // Every storage record must have attribution_method set to a known
