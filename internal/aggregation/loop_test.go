@@ -9,6 +9,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	measurementv1 "github.com/aitra-ai/aitra-meter/api/proto/measurement/v1"
+	"github.com/aitra-ai/aitra-meter/internal/aggregation/carbon"
 	"github.com/aitra-ai/aitra-meter/internal/metrics"
 	"github.com/aitra-ai/aitra-meter/internal/model"
 )
@@ -645,4 +646,97 @@ func TestLoopAttributionMethodNeverEmpty(t *testing.T) {
 			}
 		})
 	}
+}
+
+
+// TestLoopLiveCarbonIntensity verifies that Loop properly queries the CarbonIntensitySource,
+// updates Prometheus metrics with the correct provider labels ("electricitymaps", "watttime"),
+// and falls back to "static" on provider error.
+func TestLoopLiveCarbonIntensity(t *testing.T) {
+	const model = "live-carbon-model"
+	site := SiteParams{
+		ElectricityCostPerKWh: 0.10,
+		GridGCO2PerKWh:        450,
+		GridZone:              "US-CAL-CISO",
+	}
+
+	loop, _ := newTestLoopWithSite(
+		map[string]PodMeta{"node-1/" + model: {Namespace: "prod", Workload: "chat"}},
+		PolicyConfig{DefaultMethod: AttributionDirect}, nil, site,
+	)
+
+	// 1. Initial state without CarbonIntensitySource uses site fallback and "manual"
+	w := baseReport()
+	w.ModelName = model
+	if _, err := loop.ReportWindow(context.Background(), w); err != nil {
+		t.Fatalf("ReportWindow: %v", err)
+	}
+
+	jpt := 412.4 / 1328.0
+	expectedCO2Static := jpt / 3_600_000.0 * 450
+	if got := testutil.ToFloat64(metrics.CO2PerTokenGrams.WithLabelValues("prod", "chat", model, "h100", "manual")); math.Abs(got-expectedCO2Static) > 1e-12 {
+		t.Errorf("expected static co2_per_token %v, got %v", expectedCO2Static, got)
+	}
+
+	// 2. Attach live CarbonIntensitySource with electricitymaps reading
+	mockSrc := &stubCarbonSource{
+		reading: carbon.Reading{
+			GCO2PerKWh: 210.5,
+			Source:     "electricitymaps",
+		},
+	}
+	loop.SetCarbonIntensitySource(mockSrc)
+
+	if _, err := loop.ReportWindow(context.Background(), w); err != nil {
+		t.Fatalf("ReportWindow with live carbon: %v", err)
+	}
+
+	expectedCO2Live := jpt / 3_600_000.0 * 210.5
+	if got := testutil.ToFloat64(metrics.CO2PerTokenGrams.WithLabelValues("prod", "chat", model, "h100", "electricitymaps")); math.Abs(got-expectedCO2Live) > 1e-12 {
+		t.Errorf("expected electricitymaps co2_per_token %v, got %v", expectedCO2Live, got)
+	}
+	if got := testutil.ToFloat64(metrics.GridIntensityGCO2PerKWh.WithLabelValues("US-CAL-CISO", "electricitymaps")); got != 210.5 {
+		t.Errorf("expected electricitymaps grid intensity 210.5, got %v", got)
+	}
+
+	// 3. Switch reading to watttime
+	mockSrc.reading = carbon.Reading{
+		GCO2PerKWh: 320.0,
+		Source:     "watttime",
+	}
+	if _, err := loop.ReportWindow(context.Background(), w); err != nil {
+		t.Fatalf("ReportWindow with watttime carbon: %v", err)
+	}
+
+	expectedCO2WattTime := jpt / 3_600_000.0 * 320.0
+	if got := testutil.ToFloat64(metrics.CO2PerTokenGrams.WithLabelValues("prod", "chat", model, "h100", "watttime")); math.Abs(got-expectedCO2WattTime) > 1e-12 {
+		t.Errorf("expected watttime co2_per_token %v, got %v", expectedCO2WattTime, got)
+	}
+	if got := testutil.ToFloat64(metrics.GridIntensityGCO2PerKWh.WithLabelValues("US-CAL-CISO", "watttime")); got != 320.0 {
+		t.Errorf("expected watttime grid intensity 320.0, got %v", got)
+	}
+
+	// 4. Fallback reading ("static")
+	mockSrc.reading = carbon.Reading{
+		GCO2PerKWh: 450.0,
+		Source:     "static",
+	}
+	if _, err := loop.ReportWindow(context.Background(), w); err != nil {
+		t.Fatalf("ReportWindow with static fallback carbon: %v", err)
+	}
+
+	if got := testutil.ToFloat64(metrics.CO2PerTokenGrams.WithLabelValues("prod", "chat", model, "h100", "static")); math.Abs(got-expectedCO2Static) > 1e-12 {
+		t.Errorf("expected fallback static co2_per_token %v, got %v", expectedCO2Static, got)
+	}
+	if got := testutil.ToFloat64(metrics.GridIntensityGCO2PerKWh.WithLabelValues("US-CAL-CISO", "static")); got != 450.0 {
+		t.Errorf("expected static grid intensity 450.0, got %v", got)
+	}
+}
+
+type stubCarbonSource struct {
+	reading carbon.Reading
+}
+
+func (s *stubCarbonSource) Current() carbon.Reading {
+	return s.reading
 }

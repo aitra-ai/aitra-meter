@@ -10,6 +10,7 @@ type SiteParams struct {
 	GridGCO2PerKWh        float64 // grid carbon intensity, gCO2 per kWh
 	CarbonSource          string  // carbon_source metric label; defaults to "manual"
 	CostSource            string  // cost_source metric label; defaults to "manual"
+	GridZone              string  // Electricity Maps grid zone, e.g. SG or IN-KA
 }
 
 func (s SiteParams) carbonSourceLabel() string {

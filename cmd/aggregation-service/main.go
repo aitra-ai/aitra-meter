@@ -23,11 +23,11 @@ import (
 
 	measurementv1 "github.com/aitra-ai/aitra-meter/api/proto/measurement/v1"
 	"github.com/aitra-ai/aitra-meter/internal/aggregation"
+	"github.com/aitra-ai/aitra-meter/internal/aggregation/carbon"
 	k8slookup "github.com/aitra-ai/aitra-meter/internal/k8s"
 	"github.com/aitra-ai/aitra-meter/internal/storage"
 
-	// storage backends — blank imports trigger init() registration.
-	// sqlite backend added in feat(storage): SQLite backend PR.
+	// Storage backends — blank imports trigger init() registration.
 	_ "github.com/aitra-ai/aitra-meter/internal/storage/memory"
 	_ "github.com/aitra-ai/aitra-meter/internal/storage/sqlite"
 )
@@ -38,10 +38,34 @@ func main() {
 	clusterName := flag.String("cluster", "", "Cluster name (required)")
 	kubeconfig := flag.String("kubeconfig", "", "Path to kubeconfig (empty = in-cluster)")
 	logLevel := flag.String("log-level", "info", "Log level: debug | info | warn | error")
-	costPerKWh := flag.Float64("electricity-cost-per-kwh", envFloat("ELECTRICITY_COST_PER_KWH", 0), "Electricity cost USD/kWh for cost derivation (0 = off)")
-	gridGCO2 := flag.Float64("grid-gco2-per-kwh", envFloat("GRID_GCO2_PER_KWH", 0), "Grid carbon intensity gCO2/kWh for carbon derivation (0 = off)")
-	carbonSource := flag.String("carbon-source", envStr("CARBON_SOURCE", "manual"), "carbon_source metric label")
-	costSource := flag.String("cost-source", envStr("COST_SOURCE", "manual"), "cost_source metric label")
+
+	costPerKWh := flag.Float64(
+		"electricity-cost-per-kwh",
+		envFloat("ELECTRICITY_COST_PER_KWH", 0),
+		"Electricity cost USD/kWh for cost derivation (0 = off)",
+	)
+	gridGCO2 := flag.Float64(
+		"grid-gco2-per-kwh",
+		envFloat("GRID_GCO2_PER_KWH", 0),
+		"Grid carbon intensity gCO2/kWh for carbon derivation (0 = off)",
+	)
+	carbonSource := flag.String(
+		"carbon-source",
+		envStr("CARBON_SOURCE", "manual"),
+		"carbon_source metric label",
+	)
+	costSource := flag.String(
+		"cost-source",
+		envStr("COST_SOURCE", "manual"),
+		"cost_source metric label",
+	)
+
+	gridZone := envStr("GRID_ZONE", "")
+	// ELECTRICITY_MAPS_ZONE allows overriding the zone for ElectricityMaps
+	// independently of GRID_ZONE (e.g. different zone naming conventions).
+	// Falls back to GRID_ZONE when unset.
+	electricityMapsZone := envStr("ELECTRICITY_MAPS_ZONE", gridZone)
+
 	flag.Parse()
 
 	if *clusterName == "" {
@@ -57,27 +81,34 @@ func main() {
 		zap.String("grpc_addr", *grpcAddr),
 	)
 
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, cancel := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt,
+		syscall.SIGTERM,
+	)
 	defer cancel()
 
-	// --- storage backend ---------------------------------------------------
-	// Default is "sqlite" once the SQLite backend is implemented.
-	// Until then, "memory" is used — data is not persisted across restarts.
+	// --- Storage backend ---------------------------------------------------
 	backendName := os.Getenv("STORAGE_BACKEND")
 	if backendName == "" {
 		backendName = "memory"
 	}
+
 	backend, err := storage.New(backendName, map[string]string{
 		"path": os.Getenv("SQLITE_PATH"),
 	})
 	if err != nil {
-		log.Warn("storage backend init failed — falling back to memory (no persistence)",
+		log.Warn(
+			"storage backend init failed — falling back to memory (no persistence)",
 			zap.String("backend", backendName),
 			zap.Error(err),
 		)
+
 		backend, _ = storage.New("memory", nil)
 	} else {
-		log.Info("storage backend ready", zap.String("backend", backendName))
+		log.Info("storage backend ready",
+			zap.String("backend", backendName),
+		)
 	}
 	defer backend.Close() //nolint:errcheck
 
@@ -87,10 +118,13 @@ func main() {
 		log.Fatal("kubernetes client init failed", zap.Error(err))
 	}
 
-	// --- aggregation loop --------------------------------------------------
+	// --- Aggregation loop --------------------------------------------------
 	loop := aggregation.NewLoop(
 		*clusterName,
-		aggregation.NewResolver(k8slookup.NewPodMetaLookup(k8sClient), aggregation.PolicyConfig{}),
+		aggregation.NewResolver(
+			k8slookup.NewPodMetaLookup(k8sClient),
+			aggregation.PolicyConfig{},
+		),
 		aggregation.NewCalibrationTableFromMap(nil),
 		k8slookup.NewNodeHardwareLookup(k8sClient),
 		backend,
@@ -99,18 +133,87 @@ func main() {
 			GridGCO2PerKWh:        *gridGCO2,
 			CarbonSource:          *carbonSource,
 			CostSource:            *costSource,
+			GridZone:              gridZone,
 		},
 	)
+
+	// --- Live grid carbon intensity ---------------------------------------
+	if *carbonSource == "electricitymaps" {
+		token := os.Getenv("ELECTRICITY_MAPS_API_TOKEN")
+
+		provider := carbon.NewElectricityMapsClient(
+			electricityMapsZone,
+			token,
+			nil,
+		)
+
+		carbonManager := carbon.NewManager(
+			provider,
+			*gridGCO2,
+			time.Hour,
+			5*time.Minute,
+		)
+
+		loop.SetCarbonIntensitySource(carbonManager)
+
+		go carbonManager.Start(ctx)
+
+		log.Info("live grid carbon intensity poller enabled",
+			zap.String("provider", "electricitymaps"),
+			zap.String("grid_zone", electricityMapsZone),
+		)
+	}
+
+	if *carbonSource == "watttime" {
+		username := os.Getenv("WATTTIME_USERNAME")
+		password := os.Getenv("WATTTIME_PASSWORD")
+		region := os.Getenv("WATTTIME_REGION")
+		if region == "" {
+			region = gridZone
+		}
+
+		provider := carbon.NewWattTimeClient(
+			username,
+			password,
+			region,
+			nil,
+		)
+
+		carbonManager := carbon.NewManager(
+			provider,
+			*gridGCO2,
+			time.Hour,
+			5*time.Minute,
+		)
+
+		loop.SetCarbonIntensitySource(carbonManager)
+
+		go carbonManager.Start(ctx)
+
+		log.Info("live grid carbon intensity poller enabled",
+			zap.String("provider", "watttime"),
+			zap.String("region", region),
+		)
+	}
 
 	// --- gRPC server -------------------------------------------------------
 	lis, err := net.Listen("tcp", *grpcAddr)
 	if err != nil {
-		log.Fatal("gRPC listen failed", zap.String("addr", *grpcAddr), zap.Error(err))
+		log.Fatal(
+			"gRPC listen failed",
+			zap.String("addr", *grpcAddr),
+			zap.Error(err),
+		)
 	}
+
 	grpcSrv := grpc.NewServer()
 	measurementv1.RegisterMeasurementServiceServer(grpcSrv, loop)
+
 	go func() {
-		log.Info("gRPC server listening", zap.String("addr", *grpcAddr))
+		log.Info("gRPC server listening",
+			zap.String("addr", *grpcAddr),
+		)
+
 		if err := grpcSrv.Serve(lis); err != nil {
 			log.Error("gRPC server stopped", zap.Error(err))
 		}
@@ -118,11 +221,14 @@ func main() {
 
 	// --- HTTP server (metrics + health + API) ------------------------------
 	mux := http.NewServeMux()
+
 	mux.Handle("/metrics", promhttp.Handler())
+
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
+
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ready"}`))
@@ -131,43 +237,63 @@ func main() {
 	// GET /api/v1/namespaces?from=<RFC3339>&to=<RFC3339>&pue=<float>
 	mux.HandleFunc("/api/v1/namespaces", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
+
 		from, err := time.Parse(time.RFC3339, q.Get("from"))
 		if err != nil {
 			from = time.Now().AddDate(0, 0, -30)
 		}
+
 		to, err := time.Parse(time.RFC3339, q.Get("to"))
 		if err != nil {
 			to = time.Now()
 		}
+
 		pue, err := strconv.ParseFloat(q.Get("pue"), 64)
 		if err != nil || pue <= 0 {
 			pue = 1.0
 		}
 
-		charges, err := backend.QueryChargeback(r.Context(), storage.ChargebackQuery{
-			Cluster: *clusterName,
-			From:    from,
-			To:      to,
-			PUE:     pue,
-		})
+		charges, err := backend.QueryChargeback(
+			r.Context(),
+			storage.ChargebackQuery{
+				Cluster: *clusterName,
+				From:    from,
+				To:      to,
+				PUE:     pue,
+			},
+		)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"namespaces": charges})
+		_ = json.NewEncoder(w).Encode(
+			map[string]any{"namespaces": charges},
+		)
 	})
 
-	httpSrv := &http.Server{Addr: *metricsAddr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	httpSrv := &http.Server{
+		Addr:              *metricsAddr,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
 	go func() {
-		log.Info("metrics server listening", zap.String("addr", *metricsAddr))
-		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Info("metrics server listening",
+			zap.String("addr", *metricsAddr),
+		)
+
+		if err := httpSrv.ListenAndServe(); err != nil &&
+			!errors.Is(err, http.ErrServerClosed) {
 			log.Fatal("metrics server error", zap.Error(err))
 		}
 	}()
 
 	<-ctx.Done()
+
 	log.Info("shutting down")
+
 	grpcSrv.GracefulStop()
 	_ = httpSrv.Shutdown(context.Background())
 }
@@ -175,6 +301,7 @@ func main() {
 func newLogger(level string) *zap.Logger {
 	cfg := zap.NewProductionConfig()
 	_ = cfg.Level.UnmarshalText([]byte(level))
+
 	l, _ := cfg.Build()
 	return l
 }
@@ -200,13 +327,16 @@ func envFloat(key string, def float64) float64 {
 func buildK8sClient(kubeconfigPath string) (kubernetes.Interface, error) {
 	var restCfg *rest.Config
 	var err error
+
 	if kubeconfigPath != "" {
 		restCfg, err = clientcmd.BuildConfigFromFlags("", kubeconfigPath)
 	} else {
 		restCfg, err = rest.InClusterConfig()
 	}
+
 	if err != nil {
 		return nil, fmt.Errorf("kubernetes config: %w", err)
 	}
+
 	return kubernetes.NewForConfig(restCfg)
 }

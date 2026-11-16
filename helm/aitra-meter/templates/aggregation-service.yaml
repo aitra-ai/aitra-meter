@@ -1,4 +1,4 @@
----
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -36,13 +36,55 @@ spec:
               value: sqlite
             - name: SQLITE_PATH
               value: {{ .Values.storage.config.path | default "/data/aitra.db" | quote }}
-            # Site cost/carbon factors for cost + carbon metric derivation (issue #40).
+
+            # Site cost/carbon factors.
             - name: ELECTRICITY_COST_PER_KWH
               value: {{ .Values.siteConfig.electricityCostPerKwh | quote }}
             - name: GRID_GCO2_PER_KWH
               value: {{ .Values.siteConfig.carbonIntensityFallback | quote }}
             - name: CARBON_SOURCE
-              value: {{ .Values.siteConfig.carbonSource | quote }}
+              value: {{ if and (or .Values.externalApis.electricityMaps.enabled .Values.externalApis.wattTime.enabled) (not .Values.airGapped.enabled) }}{{ .Values.siteConfig.carbonSource | quote }}{{ else }}"static"{{ end }}
+            # GRID_ZONE is used by both ElectricityMaps (zone=) and WattTime (region= fallback).
+            - name: GRID_ZONE
+              value: {{ .Values.siteConfig.gridZone | quote }}
+            # ELECTRICITY_MAPS_ZONE explicitly passes the zone so the client can
+            # validate it before making a network call. Defaults to GRID_ZONE when empty.
+            - name: ELECTRICITY_MAPS_ZONE
+              value: {{ .Values.siteConfig.gridZone | quote }}
+
+            # Electricity Maps credentials are read from a Kubernetes Secret.
+            {{- if and .Values.externalApis.electricityMaps.enabled (not .Values.airGapped.enabled) }}
+            - name: ELECTRICITY_MAPS_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.externalApis.electricityMaps.secretName }}
+                  key: {{ .Values.externalApis.electricityMaps.secretKey }}
+                  optional: true
+            {{- end }}
+
+            # WattTime credentials — username, password, and optional region
+            # override (falls back to GRID_ZONE when empty).
+            {{- if and .Values.externalApis.wattTime.enabled (not .Values.airGapped.enabled) }}
+            - name: WATTTIME_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.externalApis.wattTime.secretName }}
+                  key: username
+                  optional: true
+            - name: WATTTIME_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.externalApis.wattTime.secretName }}
+                  key: password
+                  optional: true
+            - name: WATTTIME_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.externalApis.wattTime.secretName }}
+                  key: region
+                  optional: true
+            {{- end }}
+
           ports:
             - name: metrics
               containerPort: {{ .Values.aggregationService.port }}
@@ -50,20 +92,24 @@ spec:
             - name: grpc
               containerPort: 9091
               protocol: TCP
+
           resources:
             {{- toYaml .Values.aggregationService.resources | nindent 12 }}
+
           livenessProbe:
             httpGet:
               path: /healthz
               port: metrics
             initialDelaySeconds: 10
             periodSeconds: 30
+
           readinessProbe:
             httpGet:
               path: /readyz
               port: metrics
             initialDelaySeconds: 5
             periodSeconds: 10
+
 ---
 apiVersion: v1
 kind: Service
