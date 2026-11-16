@@ -13,6 +13,10 @@ const Q_GRID = "aitra_grid_intensity_gco2_per_kwh";
 
 const SOURCE_BADGE: Record<string, string> = {
   live: "bg-green-100 text-green-800",
+  electricitymaps: "bg-green-100 text-green-800",
+  watttime: "bg-green-100 text-green-800",
+  static: "bg-yellow-100 text-yellow-800",
+  manual: "bg-yellow-100 text-yellow-800",
   operator_set: "bg-blue-100 text-blue-800",
   fallback: "bg-yellow-100 text-yellow-800",
 };
@@ -37,7 +41,7 @@ export function CarbonCostTable() {
     if (gridData && gridData.length > 0) {
       const val = parseValue(gridData[0].value[1]);
       if (!isNaN(val) && val > 0) {
-        const src = gridData[0].metric.source ?? "live";
+        const src = gridData[0].metric.carbon_source ?? gridData[0].metric.source ?? "live";
         return { gridIntensity: val, gridSource: src };
       }
     }

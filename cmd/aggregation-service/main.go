@@ -61,12 +61,18 @@ func main() {
 	)
 
 	gridZone := envStr("GRID_ZONE", "")
-	// ELECTRICITY_MAPS_ZONE allows overriding the zone for ElectricityMaps
-	// independently of GRID_ZONE (e.g. different zone naming conventions).
-	// Falls back to GRID_ZONE when unset.
-	electricityMapsZone := envStr("ELECTRICITY_MAPS_ZONE", gridZone)
+	electricityMapsZoneFlag := flag.String(
+		"electricity-maps-zone",
+		envStr("ELECTRICITY_MAPS_ZONE", gridZone),
+		"ElectricityMaps grid zone identifier (e.g. US-CAL-CISO, IN-KA; defaults to GRID_ZONE)",
+	)
 
 	flag.Parse()
+
+	electricityMapsZone := *electricityMapsZoneFlag
+	if electricityMapsZone == "" {
+		electricityMapsZone = gridZone
+	}
 
 	if *clusterName == "" {
 		*clusterName = os.Getenv("CLUSTER_NAME")

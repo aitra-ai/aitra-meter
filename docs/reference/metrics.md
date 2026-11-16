@@ -203,7 +203,7 @@ Metrics are exposed at:
 
 ---
 
-### `aitra_grid_intensity_gco2_kwh`
+### `aitra_grid_intensity_gco2_per_kwh`
 
 **Type:** Gauge  
 **Source:** Aggregation service  
@@ -212,7 +212,7 @@ Metrics are exposed at:
 | Label | Description |
 |---|---|
 | `zone` | ElectricityMaps zone identifier (e.g. `SG`) |
-| `source` | `electricitymaps`, `watttime`, `last_known`, or `manual` |
+| `carbon_source` | `electricitymaps`, `watttime`, `static`, or `manual` |
 
 ---
 
@@ -313,7 +313,7 @@ Metrics are exposed at:
 
 **Cluster idle cost per hour (USD):**
 ```promql
-sum(aitra_idle_power_watts) * 0.001 * on() aitra_grid_intensity_gco2_kwh
+sum(aitra_idle_power_watts) * 0.001 * on() aitra_grid_intensity_gco2_per_kwh
 ```
 
 **Namespace monthly token cost:**
