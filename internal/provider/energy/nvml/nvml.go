@@ -1,9 +1,11 @@
-//go:build linux
+//go:build linux && cgo
 
-// Package nvml provides a pure-Go EnergyProvider using go-nvml.
-// This is the recommended provider for NVIDIA GPUs when a Python
-// sidecar is not desirable. Zeus remains the default for broader
-// hardware support.
+// Package nvml provides an EnergyProvider using go-nvml, NVIDIA's official Go
+// binding for the NVIDIA Management Library. It is the default provider for
+// NVIDIA GPUs (ADR-0006).
+//
+// go-nvml loads libnvidia-ml.so.1 at runtime through cgo, so this file needs
+// CGO_ENABLED=1. Other builds compile nvml_stub.go instead.
 package nvml
 
 import (
