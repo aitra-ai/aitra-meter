@@ -66,6 +66,16 @@ Complete reference for all Helm values, CRD fields, and pod annotations.
 | `storage.backend` | string | `sqlite` | Storage backend. `sqlite` is the default embedded backend. |
 | `storage.config.path` | string | `/data/aitra.db` | Path to the SQLite database file. Mount a PersistentVolume at `/data` for durable storage. Pass `:memory:` for an ephemeral in-process store (tests only). |
 
+### `otel`
+
+OTLP export of the `gen_ai.infrastructure.energy.*` metrics from the aggregation service, in addition to Prometheus. Off by default.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `otel.enabled` | bool | `false` | Export metrics over OTLP gRPC. Sets `OTLP_ENDPOINT` and `OTLP_INSECURE` on the aggregation service. |
+| `otel.endpoint` | string | `""` | Collector address as `host:port`, without a scheme. Required when `otel.enabled` is `true`. |
+| `otel.insecure` | bool | `true` | Connect without TLS. Set `false` for a collector that serves TLS. |
+
 
 ### `siteConfig`
 

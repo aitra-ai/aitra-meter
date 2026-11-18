@@ -23,6 +23,7 @@ import (
 
 	measurementv1 "github.com/aitra-ai/aitra-meter/api/proto/measurement/v1"
 	"github.com/aitra-ai/aitra-meter/internal/aggregation"
+	"github.com/aitra-ai/aitra-meter/internal/export/otlp"
 	k8slookup "github.com/aitra-ai/aitra-meter/internal/k8s"
 	"github.com/aitra-ai/aitra-meter/internal/storage"
 
@@ -38,6 +39,8 @@ func main() {
 	clusterName := flag.String("cluster", "", "Cluster name (required)")
 	kubeconfig := flag.String("kubeconfig", "", "Path to kubeconfig (empty = in-cluster)")
 	logLevel := flag.String("log-level", "info", "Log level: debug | info | warn | error")
+	otlpEndpoint := flag.String("otlp-endpoint", envStr("OTLP_ENDPOINT", ""), "OTLP gRPC endpoint (host:port, no scheme) for gen_ai.infrastructure.energy.* metric export (empty = off)")
+	otlpInsecure := flag.Bool("otlp-insecure", envBool("OTLP_INSECURE", false), "Disable TLS on the OTLP connection (for in-cluster collectors without TLS)")
 	costPerKWh := flag.Float64("electricity-cost-per-kwh", envFloat("ELECTRICITY_COST_PER_KWH", 0), "Electricity cost USD/kWh for cost derivation (0 = off)")
 	gridGCO2 := flag.Float64("grid-gco2-per-kwh", envFloat("GRID_GCO2_PER_KWH", 0), "Grid carbon intensity gCO2/kWh for carbon derivation (0 = off)")
 	carbonSource := flag.String("carbon-source", envStr("CARBON_SOURCE", "manual"), "carbon_source metric label")
@@ -101,6 +104,15 @@ func main() {
 			CostSource:            *costSource,
 		},
 	)
+
+	// --- OTLP export (optional) --------------------------------------------
+	if err := attachOTLP(ctx, loop, otlp.Config{
+		Endpoint:    *otlpEndpoint,
+		ClusterName: *clusterName,
+		Insecure:    *otlpInsecure,
+	}, log); err != nil {
+		log.Fatal("OTLP exporter init failed", zap.String("endpoint", *otlpEndpoint), zap.Error(err))
+	}
 
 	// --- gRPC server -------------------------------------------------------
 	lis, err := net.Listen("tcp", *grpcAddr)
@@ -170,6 +182,57 @@ func main() {
 	log.Info("shutting down")
 	grpcSrv.GracefulStop()
 	_ = httpSrv.Shutdown(context.Background())
+	if loop.OTLPExporter != nil {
+		// Bounded so an unreachable collector cannot hang shutdown.
+		flushCtx, flushCancel := context.WithTimeout(context.Background(), otlpShutdownTimeout)
+		defer flushCancel()
+		if err := loop.OTLPExporter.Shutdown(flushCtx); err != nil {
+			log.Warn("OTLP exporter shutdown failed — last metrics may not have been flushed", zap.Error(err))
+		}
+	}
+}
+
+// otlpShutdownTimeout bounds the final OTLP flush on shutdown.
+const otlpShutdownTimeout = 5 * time.Second
+
+// attachOTLP sets loop.OTLPExporter when cfg.Endpoint is non-empty, and is a
+// no-op otherwise. A malformed endpoint is an error: the OTLP client connects
+// lazily, so it would otherwise start cleanly and never export. The caller
+// shuts the exporter down.
+func attachOTLP(ctx context.Context, loop *aggregation.Loop, cfg otlp.Config, log *zap.Logger) error {
+	if cfg.Endpoint == "" {
+		return nil
+	}
+	if err := validateOTLPEndpoint(cfg.Endpoint); err != nil {
+		return err
+	}
+	exp, err := otlp.New(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	loop.OTLPExporter = exp
+	log.Info("OTLP export enabled",
+		zap.String("endpoint", cfg.Endpoint),
+		zap.Bool("insecure", cfg.Insecure),
+	)
+	return nil
+}
+
+// validateOTLPEndpoint checks that endpoint is a host:port pair, the form the
+// OTLP gRPC client expects. It rejects URLs such as http://collector:4317 and
+// ports that are not a number in 1-65535. Resolving the host is left to gRPC.
+func validateOTLPEndpoint(endpoint string) error {
+	host, port, err := net.SplitHostPort(endpoint)
+	if err != nil {
+		return fmt.Errorf("otlp endpoint %q: want host:port without a scheme: %w", endpoint, err)
+	}
+	// A URL without a port, such as http://collector, splits into host "http"
+	// and port "//collector", so the port check is what rejects it.
+	portNum, err := strconv.ParseUint(port, 10, 16)
+	if host == "" || err != nil || portNum == 0 {
+		return fmt.Errorf("otlp endpoint %q: want host:port with a numeric port and no scheme", endpoint)
+	}
+	return nil
 }
 
 func newLogger(level string) *zap.Logger {
@@ -192,6 +255,16 @@ func envFloat(key string, def float64) float64 {
 	if v := os.Getenv(key); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
 			return f
+		}
+	}
+	return def
+}
+
+// envBool parses a boolean environment variable, returning def when unset or invalid.
+func envBool(key string, def bool) bool {
+	if v := os.Getenv(key); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			return b
 		}
 	}
 	return def
