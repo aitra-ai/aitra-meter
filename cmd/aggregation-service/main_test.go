@@ -143,10 +143,18 @@ func TestAttachOTLPExportsReportedWindows(t *testing.T) {
 		t.Fatal("loop.OTLPExporter not set with an endpoint")
 	}
 
-	ack, err := loop.ReportWindow(context.Background(), servingWindow())
-	if err != nil || !ack.GetAccepted() {
-		t.Fatalf("ReportWindow = (%v, %v), want accepted window", ack, err)
+	// gRPC serves ReportWindow concurrently, so the exporter must tolerate it.
+	const reporters = 8
+	var wg sync.WaitGroup
+	for range reporters {
+		wg.Go(func() {
+			ack, err := loop.ReportWindow(context.Background(), servingWindow())
+			if err != nil || !ack.GetAccepted() {
+				t.Errorf("ReportWindow = (%v, %v), want accepted window", ack, err)
+			}
+		})
 	}
+	wg.Wait()
 
 	// Shutdown flushes the periodic reader, so the window reaches the collector
 	// without waiting for the export interval.
@@ -158,6 +166,7 @@ func TestAttachOTLPExportsReportedWindows(t *testing.T) {
 
 	for _, name := range []string{
 		"gen_ai.infrastructure.energy.joules_per_token",
+		"gen_ai.infrastructure.energy.joules_total",
 		"gen_ai.infrastructure.power.watts",
 		"gen_ai.infrastructure.idle_ratio",
 	} {

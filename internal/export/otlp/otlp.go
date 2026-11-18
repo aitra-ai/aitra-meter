@@ -39,12 +39,9 @@ type Exporter struct {
 	meter    metric.Meter
 
 	joulesPerToken metric.Float64Gauge
-	joulesTotal    metric.Float64ObservableCounter
+	joulesTotal    metric.Float64Counter
 	powerWatts     metric.Float64Gauge
 	idleRatio      metric.Float64Gauge
-
-	// joulesAccumulator holds the cumulative joules value for the observable counter.
-	joulesTotalVal float64
 }
 
 // Config holds options for the OTLP exporter.
@@ -121,8 +118,7 @@ func New(ctx context.Context, cfg Config) (*Exporter, error) {
 		return nil, fmt.Errorf("otlp: register idle_ratio: %w", err)
 	}
 
-	// Observable counter for cumulative joules — value updated via RecordWindow.
-	e.joulesTotal, err = meter.Float64ObservableCounter(
+	e.joulesTotal, err = meter.Float64Counter(
 		"gen_ai.infrastructure.energy.joules_total",
 		metric.WithDescription("Cumulative GPU energy consumed in joules."),
 		metric.WithUnit("J"),
@@ -154,8 +150,7 @@ func (e *Exporter) RecordWindow(ctx context.Context, attrs WindowAttrs, jPerToke
 	e.joulesPerToken.Record(ctx, jPerToken, metric.WithAttributes(a...))
 	e.powerWatts.Record(ctx, powerWatts, metric.WithAttributes(a...))
 	e.idleRatio.Record(ctx, idleRatio, metric.WithAttributes(a...))
-	// joulesTotal is an observable counter — its value is accumulated externally.
-	e.joulesTotalVal += joules
+	e.joulesTotal.Add(ctx, joules, metric.WithAttributes(a...))
 }
 
 // Shutdown flushes pending metrics and shuts down the provider.
