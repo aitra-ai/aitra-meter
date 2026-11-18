@@ -84,3 +84,23 @@ jobs:
         with:
           generate_release_notes: true
           files: aitra-meter-*.tgz
+
+      # GitHub Pages serves the Helm repository from the gh-pages branch, which
+      # is created by the first release.
+      - name: Publish chart to the Helm repository
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin gh-pages > /dev/null; then
+            git fetch --depth=1 origin gh-pages
+            git worktree add --detach "$RUNNER_TEMP/gh-pages" FETCH_HEAD
+          else
+            git worktree add --orphan -b gh-pages "$RUNNER_TEMP/gh-pages"
+          fi
+          # --merge keeps the index entries of earlier releases unchanged.
+          helm repo index . --merge "$RUNNER_TEMP/gh-pages/index.yaml"
+          cp index.yaml aitra-meter-*.tgz "$RUNNER_TEMP/gh-pages/"
+          cd "$RUNNER_TEMP/gh-pages"
+          git add index.yaml aitra-meter-*.tgz
+          git commit -m "Publish aitra-meter ${{ steps.tag.outputs.VERSION }}"
+          git push origin HEAD:refs/heads/gh-pages
