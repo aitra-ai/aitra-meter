@@ -21,6 +21,7 @@ import (
 	_ "github.com/aitra-ai/aitra-meter/internal/provider/energy/amd"
 	_ "github.com/aitra-ai/aitra-meter/internal/provider/energy/dcgm"
 	_ "github.com/aitra-ai/aitra-meter/internal/provider/energy/kepler"
+	_ "github.com/aitra-ai/aitra-meter/internal/provider/energy/nvml"
 	_ "github.com/aitra-ai/aitra-meter/internal/provider/energy/zeus"
 	_ "github.com/aitra-ai/aitra-meter/internal/provider/inference/genericprometheus"
 	_ "github.com/aitra-ai/aitra-meter/internal/provider/inference/vllm"
