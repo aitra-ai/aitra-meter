@@ -36,7 +36,7 @@ Label your GPU nodes, then install:
 ```bash
 kubectl label node <your-gpu-node> aitra-ai.github.io/gpu=true
 
-helm repo add aitra https://aitra-ai.github.io/helm-charts
+helm repo add aitra https://aitra-ai.github.io/aitra-meter
 helm repo update
 
 helm install aitra-meter aitra/aitra-meter \

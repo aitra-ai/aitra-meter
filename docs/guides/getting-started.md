@@ -24,7 +24,7 @@ kubectl label node <your-gpu-node> aitra-ai.github.io/gpu=true
 ## 2. Add the Helm repository
 
 ```bash
-helm repo add aitra https://aitra-ai.github.io/helm-charts
+helm repo add aitra https://aitra-ai.github.io/aitra-meter
 helm repo update
 ```
 
