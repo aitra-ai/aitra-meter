@@ -33,7 +33,7 @@ spec:
             - name: CLUSTER_NAME
               value: {{ .Values.cluster.name | quote }}
             - name: STORAGE_BACKEND
-              value: sqlite
+              value: {{ .Values.storage.backend | default "sqlite" | quote }}
             - name: SQLITE_PATH
               value: {{ .Values.storage.config.path | default "/data/aitra.db" | quote }}
             # Site cost/carbon factors for cost + carbon metric derivation (issue #40).
@@ -64,6 +64,13 @@ spec:
               port: metrics
             initialDelaySeconds: 5
             periodSeconds: 10
+          # Writable directory for the SQLite database; the image has no /data.
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
