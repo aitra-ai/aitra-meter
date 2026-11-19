@@ -2,13 +2,16 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -38,6 +41,7 @@ func main() {
 	perModel := flag.Bool("per-model", false, "Discover GPU pods on this node and report one window per model (requires a per-device energy provider such as dcgm)")
 	checkpointPath := flag.String("checkpoint-path", "", "kubelet device-plugin checkpoint path (per-model mode; defaults to "+agent.DefaultCheckpointPath+")")
 	kubeconfig := flag.String("kubeconfig", "", "Path to kubeconfig (per-model mode; defaults to in-cluster config)")
+	metricsAddr := flag.String("metrics-addr", ":9090", "Prometheus metrics and health probe listen address (empty to disable)")
 	flag.Parse()
 
 	log := newLogger(*logLevel)
@@ -69,6 +73,10 @@ func main() {
 			zap.String("provider", *energyType),
 			zap.Error(err),
 		)
+	}
+
+	if *metricsAddr != "" {
+		serveMetrics(*metricsAddr, log)
 	}
 
 	// Per-model attribution: discover GPU pods dynamically instead of reading
@@ -151,6 +159,35 @@ func newK8sClient(kubeconfigPath string) (kubernetes.Interface, error) {
 		return nil, fmt.Errorf("kubernetes config: %w", err)
 	}
 	return kubernetes.NewForConfig(restCfg)
+}
+
+// newMetricsMux returns the agent's HTTP endpoints: /metrics for Prometheus,
+// /healthz and /readyz for the kubelet probes. The Helm chart's probes and
+// ServiceMonitor target them on port 9090.
+func newMetricsMux() *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	})
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ready"}`))
+	})
+	return mux
+}
+
+// serveMetrics serves newMetricsMux on addr in the background. A listen
+// failure is logged, not fatal: the measurement loop does not depend on it.
+func serveMetrics(addr string, log *zap.Logger) {
+	srv := &http.Server{Addr: addr, Handler: newMetricsMux(), ReadHeaderTimeout: 10 * time.Second}
+	go func() {
+		log.Info("metrics server listening", zap.String("addr", addr))
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Error("metrics server stopped", zap.Error(err))
+		}
+	}()
 }
 
 func newLogger(level string) *zap.Logger {
