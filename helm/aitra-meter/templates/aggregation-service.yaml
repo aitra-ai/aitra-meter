@@ -43,6 +43,13 @@ spec:
               value: {{ .Values.siteConfig.carbonIntensityFallback | quote }}
             - name: CARBON_SOURCE
               value: {{ .Values.siteConfig.carbonSource | quote }}
+            {{- if .Values.otel.enabled }}
+            # Opt-in OTLP export of gen_ai.infrastructure.energy.* metrics.
+            - name: OTLP_ENDPOINT
+              value: {{ required "otel.endpoint is required when otel.enabled is true" .Values.otel.endpoint | quote }}
+            - name: OTLP_INSECURE
+              value: {{ .Values.otel.insecure | quote }}
+            {{- end }}
           ports:
             - name: metrics
               containerPort: {{ .Values.aggregationService.port }}
