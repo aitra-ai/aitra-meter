@@ -171,9 +171,16 @@ type wattTimeLoginResponse struct {
 	Token string `json:"token"`
 }
 
-type wattTimeIndexResponse struct {
-	// v3 /index response — MOER in lbs CO2/MWh.
-	MOER *float64 `json:"moer"`
+// wattTimeDataPoint is a single time-series entry from the v3 API.
+type wattTimeDataPoint struct {
+	PointTime string  `json:"point_time"`
+	Value     float64 `json:"value"`
+}
+
+// wattTimeV3Response is the envelope for /v3/forecast and /v3/historical.
+// data[0].value is MOER in lbs CO2/MWh when units = "lbs_co2_per_mwh".
+type wattTimeV3Response struct {
+	Data []wattTimeDataPoint `json:"data"`
 }
 
 // login obtains a JWT from the WattTime /login endpoint.
@@ -263,51 +270,56 @@ func (c *WattTimeClient) Fetch(ctx context.Context) (float64, error) {
 	return value, nil
 }
 
-// fetchSignal calls /v3/signal-index with the given Bearer token and returns
-// the MOER value in gCO2/kWh, the HTTP status code, and any error.
+// fetchSignal calls /v3/forecast with the given Bearer token and returns the
+// MOER value in gCO2/kWh, the HTTP status code, and any error.
+//
+// /v3/forecast returns data[0].value in "lbs_co2_per_mwh" for the current
+// 5-minute window — the same real-time reading as /v3/signal-index but in
+// raw physical units rather than a 0-100 percentile.
 func (c *WattTimeClient) fetchSignal(ctx context.Context, token string) (float64, int, error) {
-	indexURL, err := url.Parse(wattTimeBaseURL + "/v3/signal-index")
+	forecastURL, err := url.Parse(wattTimeBaseURL + "/v3/forecast")
 	if err != nil {
-		return 0, 0, fmt.Errorf("parse watttime index endpoint: %w", err)
+		return 0, 0, fmt.Errorf("parse watttime forecast endpoint: %w", err)
 	}
 
-	q := indexURL.Query()
+	q := forecastURL.Query()
 	q.Set("region", c.region)
 	q.Set("signal_type", "co2_moer")
-	indexURL.RawQuery = q.Encode()
+	q.Set("horizon_hours", "0") // current window only
+	forecastURL.RawQuery = q.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, indexURL.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, forecastURL.String(), nil)
 	if err != nil {
-		return 0, 0, fmt.Errorf("create watttime index request: %w", err)
+		return 0, 0, fmt.Errorf("create watttime forecast request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return 0, 0, fmt.Errorf("watttime index request failed: %w", err)
+		return 0, 0, fmt.Errorf("watttime forecast request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return 0, resp.StatusCode, fmt.Errorf(
-			"watttime index returned HTTP %d: %s",
+			"watttime forecast returned HTTP %d: %s",
 			resp.StatusCode,
 			strings.TrimSpace(string(body)),
 		)
 	}
 
-	var result wattTimeIndexResponse
+	var result wattTimeV3Response
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&result); err != nil {
-		return 0, resp.StatusCode, fmt.Errorf("decode watttime index response: %w", err)
+		return 0, resp.StatusCode, fmt.Errorf("decode watttime forecast response: %w", err)
 	}
 
-	if result.MOER == nil {
-		return 0, resp.StatusCode, fmt.Errorf("watttime index response is missing moer")
+	if len(result.Data) == 0 {
+		return 0, resp.StatusCode, fmt.Errorf("watttime forecast response has no data points")
 	}
 
-	moer := *result.MOER
+	moer := result.Data[0].Value
 	if math.IsNaN(moer) || math.IsInf(moer, 0) || moer < 0 {
 		return 0, resp.StatusCode, fmt.Errorf("watttime returned invalid MOER: %v", moer)
 	}

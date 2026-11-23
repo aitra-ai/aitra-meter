@@ -105,11 +105,11 @@ func TestElectricityMapsSource(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // wattTimeTestServer sets up a test server that handles /login and
-// /v3/signal-index with the provided responses.
+// /v3/forecast with the provided responses.
 func wattTimeTestServer(
 	t *testing.T,
 	loginStatus int, loginBody string,
-	indexStatus int, indexBody string,
+	forecastStatus int, forecastBody string,
 ) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -120,15 +120,18 @@ func wattTimeTestServer(
 			}
 			w.WriteHeader(loginStatus)
 			_, _ = fmt.Fprint(w, loginBody)
-		case "/v3/signal-index":
+		case "/v3/forecast":
 			if r.Header.Get("Authorization") == "" {
-				t.Error("expected Authorization header on /v3/signal-index")
+				t.Error("expected Authorization header on /v3/forecast")
 			}
 			if r.URL.Query().Get("region") != "CAISO_NORTH" {
 				t.Errorf("expected region CAISO_NORTH, got %q", r.URL.Query().Get("region"))
 			}
-			w.WriteHeader(indexStatus)
-			_, _ = fmt.Fprint(w, indexBody)
+			if r.URL.Query().Get("signal_type") != "co2_moer" {
+				t.Errorf("expected signal_type co2_moer, got %q", r.URL.Query().Get("signal_type"))
+			}
+			w.WriteHeader(forecastStatus)
+			_, _ = fmt.Fprint(w, forecastBody)
 		default:
 			t.Errorf("unexpected path: %s", r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
@@ -157,7 +160,7 @@ func TestWattTimeFetch(t *testing.T) {
 
 	server := wattTimeTestServer(t,
 		http.StatusOK, `{"token":"jwt-abc"}`,
-		http.StatusOK, fmt.Sprintf(`{"moer":%v}`, moer),
+		http.StatusOK, fmt.Sprintf(`{"data":[{"point_time":"2026-01-01T00:00:00+00:00","value":%v}],"meta":{"units":"lbs_co2_per_mwh"}}`, moer),
 	)
 	defer server.Close()
 
@@ -202,21 +205,21 @@ func TestWattTimeFetchIndexFailure(t *testing.T) {
 func TestWattTimeFetchMissingMOER(t *testing.T) {
 	server := wattTimeTestServer(t,
 		http.StatusOK, `{"token":"jwt-abc"}`,
-		http.StatusOK, `{"region":"CAISO_NORTH"}`,
+		http.StatusOK, `{"data":[],"meta":{}}`,
 	)
 	defer server.Close()
 
 	client := newWattTimeClientForTest(t, server)
 	_, err := client.Fetch(context.Background())
 	if err == nil {
-		t.Fatal("expected error for missing moer field")
+		t.Fatal("expected error for empty data array")
 	}
 }
 
 func TestWattTimeFetchNegativeMOER(t *testing.T) {
 	server := wattTimeTestServer(t,
 		http.StatusOK, `{"token":"jwt-abc"}`,
-		http.StatusOK, `{"moer":-5}`,
+		http.StatusOK, `{"data":[{"point_time":"2026-01-01T00:00:00+00:00","value":-5}],"meta":{}}`,
 	)
 	defer server.Close()
 
@@ -258,7 +261,7 @@ func TestWattTimeSource(t *testing.T) {
 }
 
 // TestWattTimeFetchTokenExpiry401Retry validates the auto-reauth-on-401 path.
-// The signal endpoint returns 401 on the first call (simulating an expired
+// The forecast endpoint returns 401 on the first call (simulating an expired
 // token) and 200 on the second, after re-authentication.
 func TestWattTimeFetchTokenExpiry401Retry(t *testing.T) {
 	const moer = 400.0
@@ -271,7 +274,7 @@ func TestWattTimeFetchTokenExpiry401Retry(t *testing.T) {
 		case "/login":
 			w.WriteHeader(http.StatusOK)
 			_, _ = fmt.Fprint(w, `{"token":"fresh-jwt"}`)
-		case "/v3/signal-index":
+		case "/v3/forecast":
 			signalCallCount++
 			if signalCallCount == 1 {
 				// First attempt: simulate an expired/invalid token.
@@ -280,7 +283,7 @@ func TestWattTimeFetchTokenExpiry401Retry(t *testing.T) {
 			} else {
 				// Second attempt after re-auth: succeed.
 				w.WriteHeader(http.StatusOK)
-				_, _ = fmt.Fprintf(w, `{"moer":%v}`, moer)
+				_, _ = fmt.Fprintf(w, `{"data":[{"point_time":"2026-01-01T00:00:00+00:00","value":%v}],"meta":{"units":"lbs_co2_per_mwh"}}`, moer)
 			}
 		default:
 			t.Errorf("unexpected path: %s", r.URL.Path)
