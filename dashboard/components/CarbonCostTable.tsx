@@ -30,23 +30,28 @@ function deriveKwhPerToken(jpt: number, pue: number): number {
 export function CarbonCostTable() {
   const [pue, setPue] = useState(1.2);
   const [costPerKwh, setCostPerKwh] = useState(0.08);
-  // Fallback grid intensity (used when the Prometheus metric is absent)
+  // Fallback / custom grid intensity (gCO₂/kWh)
   const [fallbackGrid, setFallbackGrid] = useState(400); // gCO₂/kWh — EU avg
+  const [customGridEnabled, setCustomGridEnabled] = useState(false);
 
   const { data: jptData, error, isLoading } = useMetrics(Q_JPT);
   const { data: gridData } = useMetrics(Q_GRID);
 
-  // Determine grid intensity source
-  const { gridIntensity, gridSource } = useMemo(() => {
+  // Determine whether Prometheus is providing a live/backend grid intensity
+  const { promGridIntensity, promGridSource } = useMemo(() => {
     if (gridData && gridData.length > 0) {
       const val = parseValue(gridData[0].value[1]);
       if (!isNaN(val) && val > 0) {
         const src = gridData[0].metric.carbon_source ?? gridData[0].metric.source ?? "live";
-        return { gridIntensity: val, gridSource: src };
+        return { promGridIntensity: val, promGridSource: src };
       }
     }
-    return { gridIntensity: fallbackGrid, gridSource: "fallback" };
-  }, [gridData, fallbackGrid]);
+    return { promGridIntensity: null, promGridSource: "fallback" };
+  }, [gridData]);
+
+  const isCustomOrFallback = customGridEnabled || promGridIntensity === null;
+  const gridIntensity = isCustomOrFallback ? fallbackGrid : promGridIntensity;
+  const gridSource = customGridEnabled ? "manual" : promGridSource;
 
   const rows = jptData ?? [];
 
@@ -100,19 +105,30 @@ export function CarbonCostTable() {
         </div>
 
         <div>
-          <label className="mb-1 block text-xs font-medium text-gray-500">
-            Grid intensity (gCO₂/kWh){" "}
-            {gridSource !== "fallback" ? (
-              <span className={`inline rounded px-1 py-0.5 text-xs font-medium ${SOURCE_BADGE[gridSource] ?? SOURCE_BADGE.live}`}>
-                live
-              </span>
-            ) : (
-              <span className={`inline rounded px-1 py-0.5 text-xs font-medium ${SOURCE_BADGE.fallback}`}>
-                fallback
-              </span>
+          <label className="mb-1 flex items-center gap-2 text-xs font-medium text-gray-500">
+            <span>Grid intensity (gCO₂/kWh)</span>
+            <span className={`inline rounded px-1 py-0.5 text-xs font-medium ${SOURCE_BADGE[gridSource] ?? SOURCE_BADGE.live}`}>
+              {gridSource}
+            </span>
+            {promGridIntensity !== null && (
+              <label className="ml-1 inline-flex cursor-pointer items-center gap-1 text-xs font-normal text-blue-600">
+                <input
+                  type="checkbox"
+                  checked={customGridEnabled}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    if (checked) {
+                      setFallbackGrid(Math.round(promGridIntensity));
+                    }
+                    setCustomGridEnabled(checked);
+                  }}
+                  className="rounded border-gray-300"
+                />
+                Override in UI
+              </label>
             )}
           </label>
-          {gridSource === "fallback" ? (
+          {isCustomOrFallback ? (
             <input
               type="number"
               min={0}
