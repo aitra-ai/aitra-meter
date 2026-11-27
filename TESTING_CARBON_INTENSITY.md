@@ -54,12 +54,17 @@ What this verifies:
 
 ## 3. Testing with Live WattTime Credentials (No Cluster Needed)
 
-A dedicated live integration test verifies real authentication and `/v3/forecast` data retrieval directly against `api.watttime.org`:
+A dedicated live integration test verifies real authentication and `/v3/forecast` data retrieval directly against `api.watttime.org`.
+
+To keep **both** your username and password hidden (blank when typed and excluded from shell history), use `read -r -s`:
 
 ```bash
-WATTTIME_USERNAME="<your-username>" \
-WATTTIME_PASSWORD="<your-password>" \
-WATTTIME_REGION="CAISO_NORTH" \
+read -r -s -p "WattTime Username: " WATTTIME_USERNAME; echo
+read -r -s -p "WattTime Password: " WATTTIME_PASSWORD; echo
+read -r -p "WattTime Region [CAISO_NORTH]: " WATTTIME_REGION
+WATTTIME_REGION=${WATTTIME_REGION:-CAISO_NORTH}
+export WATTTIME_USERNAME WATTTIME_PASSWORD WATTTIME_REGION
+
 go test -v -count=1 -run TestWattTimeLiveIntegration ./internal/aggregation/carbon/
 ```
 
@@ -82,9 +87,9 @@ The `aggregation-service` binary requires a Kubernetes config (either in-cluster
 
 ### Option A: Run with WattTime
 ```bash
-export WATTTIME_USERNAME="<your-username>"
-export WATTTIME_PASSWORD="<your-password>"
-export WATTTIME_REGION="CAISO_NORTH"
+read -r -s -p "WattTime Username: " WATTTIME_USERNAME; echo
+read -r -s -p "WattTime Password: " WATTTIME_PASSWORD; echo
+export WATTTIME_USERNAME WATTTIME_PASSWORD WATTTIME_REGION="CAISO_NORTH"
 
 go run ./cmd/aggregation-service \
   --cluster=test-cluster \
@@ -96,8 +101,8 @@ go run ./cmd/aggregation-service \
 
 ### Option B: Run with Electricity Maps
 ```bash
-export ELECTRICITY_MAPS_API_TOKEN="<your-api-token>"
-export ELECTRICITY_MAPS_ZONE="US-CAL-CISO"
+read -r -s -p "Electricity Maps API Token: " ELECTRICITY_MAPS_API_TOKEN; echo
+export ELECTRICITY_MAPS_API_TOKEN ELECTRICITY_MAPS_ZONE="US-CAL-CISO"
 
 go run ./cmd/aggregation-service \
   --cluster=test-cluster \
