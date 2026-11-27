@@ -62,11 +62,13 @@ var (
 		Help: "Fraction of the last hour during which the node had no active inference requests (0.0-1.0).",
 	}, []string{"node"})
 
-	// GridIntensityGCO2KWh is the current grid carbon intensity.
-	GridIntensityGCO2KWh = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "aitra_grid_intensity_gco2_kwh",
+	// GridIntensityGCO2PerKWh is the current grid carbon intensity.
+	// Named with _per_ to match the dashboard query in CarbonCostTable.tsx.
+	// Labels: zone (grid zone identifier, e.g. "US-CAL-CISO"), carbon_source ("electricitymaps" | "watttime" | "static" | "manual").
+	GridIntensityGCO2PerKWh = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "aitra_grid_intensity_gco2_per_kwh",
 		Help: "Current grid carbon intensity in gCO2/kWh for the cluster grid zone.",
-	}, []string{"zone", "source"})
+	}, []string{"zone", "carbon_source"})
 
 	// MeasurementCV is the rolling coefficient of variation.
 	MeasurementCV = promauto.NewGaugeVec(prometheus.GaugeOpts{

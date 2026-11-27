@@ -183,6 +183,8 @@ siteConfig:
   electricityCostPerKwh: 0.12
   pue: 1.35
   carbonIntensityFallback: 400
+  # carbonSource selects the live provider: electricitymaps | watttime | static | manual
+  # "static" and "manual" are equivalent fallback labels; "manual" is kept for backwards compatibility.
   carbonSource: electricitymaps
 
 # Per-namespace 24h inference-energy cost budgets (USD), keyed by namespace name.
@@ -203,6 +205,9 @@ externalApis:
     secretKey: token
   wattTime:
     enabled: false
+    # Secret must contain keys: username, password, and optionally region
+    # (WattTime balancing-authority abbreviation, e.g. "CAISO_NORTH").
+    # When region key is absent the value of siteConfig.gridZone is used.
     secretName: aitra-watttime-credentials
   openEI:
     enabled: false

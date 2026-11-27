@@ -40,5 +40,9 @@ spec:
                   description: gCO2/kWh — used when carbon API is unavailable
                 carbonSource:
                   type: string
-                  enum: [electricitymaps, watttime, manual]
+                  enum: [electricitymaps, watttime, manual, static]
                   default: manual
+                  description: >
+                    Carbon data source. Use "electricitymaps" or "watttime" for live
+                    data. "static" and "manual" are both accepted as fallback labels
+                    (identical behaviour; "manual" is kept for backwards compatibility).
